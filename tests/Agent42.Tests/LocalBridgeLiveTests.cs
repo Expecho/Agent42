@@ -54,7 +54,7 @@ public sealed partial class LocalBridgeLiveTests(SharedClusterFixture fixture, I
 
         try
         {
-            await LocalBridgeTestHost.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the helper to connect");
+            await TestWait.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the helper to connect");
 
             var connection = await new LocalBridgeConnectionFactory(new NoInner(), registry, NullLoggerFactory.Instance)
                 .ConnectAsync(server, new McpConnectionSecrets(null, null), CancellationToken.None);

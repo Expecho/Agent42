@@ -30,7 +30,7 @@ public sealed class FleetResultDeliveryTests(SharedClusterFixture fixture) : Sha
 
         await agent.ReceiveFleetResultAsync("task-1", FleetToolLimits.FrameResult(Done("task-1")));
 
-        await PollUntilAsync(() => PushesFor("fleet-result-user").Count >= 1 && DeliveriesFor("fleet-result-conv").Count >= 1);
+        await TestWait.WaitUntilAsync(() => PushesFor("fleet-result-user").Count >= 1 && DeliveriesFor("fleet-result-conv").Count >= 1);
         var history = await agent.GetHistoryAsync();
         Assert.Equal(before + 2, history.Count);
         Assert.StartsWith("[Agent42 fleet]", history[^2].Text, StringComparison.Ordinal);
@@ -66,16 +66,6 @@ public sealed class FleetResultDeliveryTests(SharedClusterFixture fixture) : Sha
         => [.. Cluster.Silos
             .SelectMany(silo => Cluster.GetSiloServiceProvider(silo.SiloAddress)
                 .GetRequiredService<RecordingChatDeliverySender>().For(conversationId))];
-
-    private static async Task PollUntilAsync(Func<bool> condition)
-    {
-        for (var attempt = 0; attempt < 300 && !condition(); attempt++)
-        {
-            await Task.Delay(100);
-        }
-
-        Assert.True(condition(), "The result turn never completed.");
-    }
 
     private static async Task CollectAsync(IAsyncEnumerable<AgentStreamEvent> stream)
     {

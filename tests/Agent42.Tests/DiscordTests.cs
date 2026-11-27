@@ -291,12 +291,12 @@ public sealed class DiscordAdapterTests : IAsyncLifetime
         await Task.Delay(150);
         Assert.Empty(_server.Identifies);
         session.Start();
-        await ChatGatewayServiceTests.Until(() => _server.IsReady);
+        await TestWait.WaitUntilAsync(() => _server.IsReady);
 
         await _server.DispatchMessageAsync("1300000000000000005", BotId, "my own reply", bot: true);
         await _server.DispatchMessageAsync("1300000000000000006", "1000000000000000007", "hello from discord");
 
-        await ChatGatewayServiceTests.Until(() => !sink.Messages.IsEmpty);
+        await TestWait.WaitUntilAsync(() => !sink.Messages.IsEmpty);
         var message = Assert.Single(sink.Messages);
         Assert.Equal(("1300000000000000006", ChatType.Direct, "hello from discord"), (message.PlatformMessageId, message.ChatType, message.Text));
         Assert.False(session.Completion.IsCompleted);

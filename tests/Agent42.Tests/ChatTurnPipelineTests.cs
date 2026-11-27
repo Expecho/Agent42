@@ -18,13 +18,19 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
     private static readonly DateTimeOffset Now = DateTimeOffset.UtcNow;
     private int _messageId;
 
+    // Tests that assert something did NOT happen on the turn's worker (a queued message while the gate is closed, the
+    // drop of a /stop-ed queue, a reply with no conversation behind it) have no positive event to wait for, so they
+    // bound the wait instead. Dropped messages (stranger, bot, group, duplicate) need none: AcceptAsync decides them
+    // inline, before InjectAsync returns. It only costs time
+    // when the assertion could still be wrong, and a longer bound can only make a false pass less likely.
+    private static readonly TimeSpan NothingHappensGrace = TimeSpan.FromMilliseconds(300);
+
     [Fact]
     public async Task Pipeline_Stranger_IgnoredWithoutState()
     {
         var h = await PairedAsync();
 
         await h.Session.InjectAsync(Dm("hello", sender: Stranger, chat: Stranger));
-        await Task.Delay(200);
 
         Assert.Empty(h.Session.Sent);
         Assert.Null((await Route(h, Stranger).GetAsync()).ConversationId);
@@ -40,7 +46,7 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         await h.Session.InjectAsync(Dm("wrong code"));
         await h.Session.InjectAsync(Dm(code.ToLowerInvariant()));
 
-        await Until(() => h.Session.VisibleMessages().Any(m => m.StartsWith("Linked to Agent42", StringComparison.Ordinal)));
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Any(m => m.StartsWith("Linked to Agent42", StringComparison.Ordinal)));
         Assert.Equal(Owner, (await Store(h).GetAsync(h.ConnectionId))!.OwnerPlatformUserId);
         Assert.Single(h.Session.VisibleMessages());
         Assert.Empty(await Index(h).GetConversationsAsync());
@@ -53,7 +59,6 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         var code = (await Store(h).GetAsync(h.ConnectionId))!.PairingCode!;
 
         await h.Session.InjectAsync(Group(code, mentions: true));
-        await Task.Delay(200);
 
         Assert.False((await Store(h).GetAsync(h.ConnectionId))!.IsPaired);
         Assert.Empty(h.Session.Sent);
@@ -83,7 +88,6 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
         await h.Session.InjectAsync(Dm("echo", sender: FakeChatPlatformAdapter.BotUserId));
         await h.Session.InjectAsync(Dm("from a bot") with { SenderIsBot = true });
-        await Task.Delay(200);
 
         Assert.Empty(h.Session.Sent);
     }
@@ -100,7 +104,6 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         var reconnected = new FakeChatSession(h.Session.Runtime, h.Pipeline);
         h.Sessions.Set(h.ConnectionId, reconnected);
         await reconnected.InjectAsync(message);
-        await Task.Delay(300);
 
         Assert.Empty(reconnected.Sent);
         Assert.Equal(1, (await Route(h).GetAsync()).TurnCount);
@@ -116,12 +119,12 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         await h.Session.InjectAsync(Dm("first"));
         await h.Session.InjectAsync(Dm("second"));
         await Task.WhenAny(gates.Select(g => g.Reached.Task));
-        await Task.Delay(200);
+        await Task.Delay(NothingHappensGrace);
         // The second has not started: only the first reply's placeholder exists.
         Assert.Single(h.Session.Sent, s => s.Op == "send");
 
         CloseGates();
-        await Until(() => h.Session.VisibleMessages().Count(m => m.Contains(Reply, StringComparison.Ordinal)) == 2);
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Count(m => m.Contains(Reply, StringComparison.Ordinal)) == 2);
         var route = await Route(h).GetAsync();
         Assert.Equal(2, route.TurnCount);
         Assert.Equal(4, (await Agent(h, route.ConversationId!).GetHistoryAsync()).Count);
@@ -138,9 +141,9 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         await h.Session.InjectAsync(Dm("in another chat", chat: "333333333"));
 
         // Both replies have their placeholder while the first turn is still parked.
-        await Until(() => h.Session.Sent.Count(s => s.Op == "send") == 2);
+        await TestWait.WaitUntilAsync(() => h.Session.Sent.Count(s => s.Op == "send") == 2);
         CloseGates();
-        await Until(() => h.Session.VisibleMessages().Count(m => m.Contains(Reply, StringComparison.Ordinal)) == 2);
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Count(m => m.Contains(Reply, StringComparison.Ordinal)) == 2);
     }
 
     // AC5: /stop runs ahead of the queue, stops the running turn and drops what waits behind it.
@@ -155,9 +158,9 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
         await h.Session.InjectAsync(Dm("/stop"));
 
-        await Until(() => h.Session.VisibleMessages().Contains("Stopped, and dropped 1 waiting message."));
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Contains("Stopped, and dropped 1 waiting message."));
         CloseGates();
-        await Task.Delay(300);
+        await Task.Delay(NothingHappensGrace);
         Assert.Equal(1, (await Route(h).GetAsync()).TurnCount);
     }
 
@@ -171,9 +174,9 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         var first = (await Route(h).GetAsync()).ConversationId;
 
         await h.Session.InjectAsync(Dm("/new"));
-        await Until(() => h.Session.VisibleMessages().Contains("Started a new conversation."));
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Contains("Started a new conversation."));
         await h.Session.InjectAsync(Dm("second"));
-        await Until(() => h.Session.VisibleMessages().Count(m => m.Contains(Reply, StringComparison.Ordinal)) == 2);
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Count(m => m.Contains(Reply, StringComparison.Ordinal)) == 2);
 
         Assert.NotEqual(first, (await Route(h).GetAsync()).ConversationId);
         Assert.Equal(2, (await Index(h).GetConversationsAsync()).Count);
@@ -187,7 +190,7 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
         await h.Session.InjectAsync(Dm("/model nope"));
         await h.Session.InjectAsync(Dm($"/model {TestSiloConfigurator.NoVisionModel}"));
-        await Until(() => h.Session.VisibleMessages().Any(m => m.StartsWith("Model set to", StringComparison.Ordinal)));
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Any(m => m.StartsWith("Model set to", StringComparison.Ordinal)));
         await h.Session.InjectAsync(Dm("hi"));
         await FinalReplyAsync(h, Reply);
 
@@ -205,7 +208,7 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         await h.Session.InjectAsync(Dm("/model auto"));
         await h.Session.InjectAsync(Dm("/model list"));
 
-        await Until(() => h.Session.VisibleMessages().Count == 2);
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Count == 2);
         var replies = h.Session.VisibleMessages();
         Assert.StartsWith("Model set to Auto", replies[0]);
         Assert.Contains("• auto", replies[1]);
@@ -220,7 +223,7 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         await h.Session.InjectAsync(Dm("/model auto"));
         await h.Session.InjectAsync(Dm("/model list"));
 
-        await Until(() => h.Session.VisibleMessages().Count == 2);
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Count == 2);
         var replies = h.Session.VisibleMessages();
         Assert.StartsWith("Auto isn't set up", replies[0]);
         Assert.DoesNotContain("• auto", replies[1]);
@@ -303,7 +306,7 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
         await h.Session.InjectAsync(Dm("draw me a cat"));
 
-        await Until(() => h.Session.Sent.Any(s => s.Op == "image"));
+        await TestWait.WaitUntilAsync(() => h.Session.Sent.Any(s => s.Op == "image"));
         var conversationId = (await Route(h).GetAsync()).ConversationId!;
         // The conversation itself stays on its chat model.
         foreach (var silo in Cluster.Silos)
@@ -325,9 +328,9 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         var plain = (await Route(h).GetAsync()).ConversationId!;
 
         await h.Session.InjectAsync(Dm("/agent weather BOT"));
-        await Until(() => h.Session.VisibleMessages().Contains("Started a new conversation with Weather bot."));
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Contains("Started a new conversation with Weather bot."));
         await h.Session.InjectAsync(Dm("now the agent"));
-        await Until(() => h.Session.VisibleMessages().Count(m => m.Contains(Reply, StringComparison.Ordinal)) == 2);
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Count(m => m.Contains(Reply, StringComparison.Ordinal)) == 2);
 
         var withAgent = (await Route(h).GetAsync()).ConversationId!;
         Assert.NotEqual(plain, withAgent);
@@ -347,7 +350,7 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
         await Store(h).UpdateSettingsAsync(h.ConnectionId, new ChatConnectionSettings { Name = "x", TargetAgentId = second.Id }, Now);
         await h.Session.InjectAsync(Dm("again"));
-        await Until(() => h.Session.VisibleMessages().Count(m => m.Contains(Reply, StringComparison.Ordinal)) == 2);
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Count(m => m.Contains(Reply, StringComparison.Ordinal)) == 2);
 
         var conversationId = (await Route(h).GetAsync()).ConversationId!;
         Assert.Equal(first.Id, (await Agent(h, conversationId).GetAgentBindingAsync())!.AgentId);
@@ -361,7 +364,7 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
         await h.Session.InjectAsync(Dm("hello"));
 
-        await Until(() => h.Session.VisibleMessages().Any(m => m.Contains("no longer exists", StringComparison.Ordinal)));
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Any(m => m.Contains("no longer exists", StringComparison.Ordinal)));
         Assert.Empty(await Index(h).GetConversationsAsync());
     }
 
@@ -374,7 +377,7 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
         await h.Session.InjectAsync(Dm("are you there?"));
 
-        await Until(async () => (await Route(h).GetAsync()).ConversationId is { } id
+        await TestWait.WaitUntilAsync(async () => (await Route(h).GetAsync()).ConversationId is { } id
             && (await Agent(h, id).GetHistoryAsync()).Count == 2);
         h.Session.Hang.TrySetResult();
     }
@@ -407,8 +410,8 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
         await h.Session.InjectAsync(Dm("one more"));
 
-        await Until(() => h.Session.VisibleMessages().Any(m => m.StartsWith("This conversation got long", StringComparison.Ordinal)));
-        await Until(() => h.Session.VisibleMessages().Count(m => m.Contains(Reply, StringComparison.Ordinal)) == 2);
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Any(m => m.StartsWith("This conversation got long", StringComparison.Ordinal)));
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Count(m => m.Contains(Reply, StringComparison.Ordinal)) == 2);
         Assert.NotEqual(before, (await route.GetAsync()).ConversationId);
     }
 
@@ -441,7 +444,7 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
         await h.Session.InjectAsync(Group("/stop", mentions: false));
 
-        await Until(() => h.Session.VisibleMessages().Contains("Stopped."));
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Contains("Stopped."));
     }
 
     // AC6: the read-only commands answer from the owner's own state, and /sethome stores the route.
@@ -461,7 +464,7 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         await h.Session.InjectAsync(Dm("/model default"));
         await h.Session.InjectAsync(Dm("/agent nobody"));
 
-        await Until(() => h.Session.VisibleMessages().Count == 9);
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Count == 9);
         var replies = h.Session.VisibleMessages();
         Assert.Contains($"• {TestSiloConfigurator.NoVisionModel}", replies[0]);
         Assert.Contains("• Weather bot", replies[1]);
@@ -483,7 +486,7 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
         await h.Session.InjectAsync(Dm(""));
 
-        await Until(() => h.Session.VisibleMessages().Any(m => m.StartsWith("I can read text, images and documents here", StringComparison.Ordinal)));
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Any(m => m.StartsWith("I can read text, images and documents here", StringComparison.Ordinal)));
         Assert.Empty(await Index(h).GetConversationsAsync());
     }
 
@@ -495,13 +498,13 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
         OpenGates(afterChunks: 1);
         await h.Session.InjectAsync(Dm("a very long research question"));
 
-        await Until(() => h.Session.VisibleMessages().Any(m => m.StartsWith("This is taking a while", StringComparison.Ordinal)));
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Any(m => m.StartsWith("This is taking a while", StringComparison.Ordinal)));
         CloseGates();
         await h.Session.InjectAsync(Dm("/status"));
 
-        await Until(() => h.Session.VisibleMessages().Any(m => m.StartsWith("Model:", StringComparison.Ordinal)));
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Any(m => m.StartsWith("Model:", StringComparison.Ordinal)));
         var conversationId = (await Route(h).GetAsync()).ConversationId!;
-        await Until(async () => (await Agent(h, conversationId).GetHistoryAsync()).Count == 2);
+        await TestWait.WaitUntilAsync(async () => (await Agent(h, conversationId).GetHistoryAsync()).Count == 2);
     }
 
     // AC17: an image rides onto the turn as an attachment; a document is ingested (and registered) before it runs.
@@ -552,8 +555,8 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
         await h.Session.InjectAsync(Dm("", files: [new ChatInboundFile("exe", "setup.exe", "application/octet-stream", 10, false)]));
 
-        await Until(() => h.Session.VisibleMessages().Any(m => m.Contains("'setup.exe' is not a supported", StringComparison.Ordinal)));
-        await Task.Delay(200);
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Any(m => m.Contains("'setup.exe' is not a supported", StringComparison.Ordinal)));
+        await Task.Delay(NothingHappensGrace); // the turn runs on a worker: a wrong later step (a minted conversation) lands after the reply
         Assert.Empty(await Index(h).GetConversationsAsync());
         Assert.Empty(h.Session.Downloads);
     }
@@ -622,8 +625,8 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
         await h.Session.InjectAsync(Dm("", files: [failure == "format" ? new ChatInboundFile("v", "clip.flac", "audio/flac", 3, true) : Voice("v")]));
 
-        await Until(() => h.Session.VisibleMessages().Count > 0);
-        await Task.Delay(300);
+        await TestWait.WaitUntilAsync(() => h.Session.VisibleMessages().Count > 0);
+        await Task.Delay(NothingHappensGrace); // exactly ONE reply, and no conversation: give a wrong second step time to land
         Assert.StartsWith(reply, Assert.Single(h.Session.VisibleMessages()), StringComparison.Ordinal);
         Assert.DoesNotContain(h.Session.VisibleMessages(), m => m.Contains(RefusingTranscriber.ProviderText, StringComparison.Ordinal));
         Assert.Empty(await Index(h).GetConversationsAsync());
@@ -710,7 +713,7 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
     private static async Task<string> FinalReplyAsync(Harness h, string contains)
     {
         string? reply = null;
-        await Until(() => (reply = h.Session.VisibleMessages().LastOrDefault(m => m.Contains(contains, StringComparison.Ordinal)
+        await TestWait.WaitUntilAsync(() => (reply = h.Session.VisibleMessages().LastOrDefault(m => m.Contains(contains, StringComparison.Ordinal)
             && !m.EndsWith(" ▍", StringComparison.Ordinal))) is not null);
         return reply!;
     }
@@ -739,7 +742,4 @@ public sealed class ChatTurnPipelineTests(SharedClusterFixture fixture) : Shared
 
     private IAgentGrain Agent(Harness h, string conversationId) => Cluster.GrainFactory.GetGrain<IAgentGrain>($"{h.UserId}/{conversationId}");
 
-    private static Task Until(Func<bool> condition) => ChatGatewayServiceTests.Until(condition);
-
-    private static Task Until(Func<Task<bool>> condition) => ChatGatewayServiceTests.Until(condition);
 }

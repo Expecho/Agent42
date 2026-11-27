@@ -26,7 +26,7 @@ public sealed class LocalBridgeKestrelTests(SharedClusterFixture fixture) : Shar
         var (server, key) = await LocalBridgeTestHost.NewBridgeServerAsync(Cluster.GrainFactory, "bridge-kestrel-drop");
         await using var app = await LocalBridgeTestHost.StartAsync(Cluster.GrainFactory, registry, kestrel: true);
         await using var helper = await LocalBridgeTestHost.ConnectKestrelAsync(app, key);
-        await LocalBridgeTestHost.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the bridge to register");
+        await TestWait.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the bridge to register");
 
         var connection = await new LocalBridgeConnectionFactory(new NullInner(), registry, NullLoggerFactory.Instance)
             .ConnectAsync(server, NoSecrets, CancellationToken.None);
@@ -42,7 +42,7 @@ public sealed class LocalBridgeKestrelTests(SharedClusterFixture fixture) : Shar
         var finished = await Task.WhenAny(pending, Task.Delay(TimeSpan.FromSeconds(10)));
         Assert.Same(pending, finished);
         await Assert.ThrowsAnyAsync<Exception>(() => pending);
-        await LocalBridgeTestHost.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is null, "the dead bridge to unregister");
+        await TestWait.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is null, "the dead bridge to unregister");
     }
 
     // Chrome extension ADR: a browser fails the handshake unless an offered subprotocol is echoed, and the key is
@@ -78,11 +78,11 @@ public sealed class LocalBridgeKestrelTests(SharedClusterFixture fixture) : Shar
         await using var app = await LocalBridgeTestHost.StartAsync(Cluster.GrainFactory, registry, kestrel: true);
 
         await using var first = await LocalBridgeTestHost.ConnectKestrelAsync(app, key, "first");
-        await LocalBridgeTestHost.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the first bridge");
+        await TestWait.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the first bridge");
         var firstSession = registry.FindByKeyHash(server.BridgeKeyHash!);
 
         await using var second = await LocalBridgeTestHost.ConnectKestrelAsync(app, key, "second");
-        await LocalBridgeTestHost.WaitUntilAsync(
+        await TestWait.WaitUntilAsync(
             () => registry.FindByKeyHash(server.BridgeKeyHash!) is { } now && !ReferenceEquals(now, firstSession), "the second bridge");
 
         await first.Completion.WaitAsync(TimeSpan.FromSeconds(10));
@@ -117,7 +117,7 @@ public sealed class LocalBridgeKestrelTests(SharedClusterFixture fixture) : Shar
 
         using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var first = NewHelper().RunAsync(stop.Token);
-        await LocalBridgeTestHost.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the first helper");
+        await TestWait.WaitUntilAsync(() => registry.FindByKeyHash(server.BridgeKeyHash!) is not null, "the first helper");
         var firstSession = registry.FindByKeyHash(server.BridgeKeyHash!);
 
         var second = NewHelper().RunAsync(stop.Token);

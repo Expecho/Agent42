@@ -24,7 +24,7 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
         var adapter = new FakeChatPlatformAdapter();
         await using var gateway = await StartAsync(adapter, new FakeLeaseAuthority());
 
-        await Until(() => gateway.Service.IsLive(connectionId));
+        await TestWait.WaitUntilAsync(() => gateway.Service.IsLive(connectionId));
 
         var session = adapter.SessionFor(connectionId)!;
         Assert.Equal(userId, session.Runtime.UserId);
@@ -38,7 +38,7 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
         var adapter = new FakeChatPlatformAdapter { ConnectFailure = new ChatAuthException("Telegram rejected the bot token.") };
         await using var gateway = await StartAsync(adapter, new FakeLeaseAuthority());
 
-        await Until(async () => (await Store(userId).GetAsync(connectionId))!.FaultReason is not null);
+        await TestWait.WaitUntilAsync(async () => (await Store(userId).GetAsync(connectionId))!.FaultReason is not null);
         var attempts = adapter.ConnectAttempts;
         await Task.Delay(100);
 
@@ -54,10 +54,10 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
         var adapter = new FakeChatPlatformAdapter { ConnectFailure = new IOException("network down") };
         await using var gateway = await StartAsync(adapter, new FakeLeaseAuthority());
 
-        await Until(() => adapter.ConnectAttempts >= 3);
+        await TestWait.WaitUntilAsync(() => adapter.ConnectAttempts >= 3);
         adapter.ConnectFailure = null;
 
-        await Until(() => gateway.Service.IsLive(connectionId));
+        await TestWait.WaitUntilAsync(() => gateway.Service.IsLive(connectionId));
     }
 
     [Fact]
@@ -66,11 +66,11 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
         var (userId, connectionId) = await NewConnectionAsync();
         var adapter = new FakeChatPlatformAdapter();
         await using var gateway = await StartAsync(adapter, new FakeLeaseAuthority());
-        await Until(() => gateway.Service.IsLive(connectionId));
+        await TestWait.WaitUntilAsync(() => gateway.Service.IsLive(connectionId));
 
         adapter.SessionFor(connectionId)!.Drop(new ChatAuthException("Another program is reading this bot's messages."));
 
-        await Until(async () => (await Store(userId).GetAsync(connectionId))!.FaultReason is not null);
+        await TestWait.WaitUntilAsync(async () => (await Store(userId).GetAsync(connectionId))!.FaultReason is not null);
         Assert.False(gateway.Service.IsLive(connectionId));
     }
 
@@ -80,12 +80,12 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
         var (_, connectionId) = await NewConnectionAsync();
         var adapter = new FakeChatPlatformAdapter();
         await using var gateway = await StartAsync(adapter, new FakeLeaseAuthority());
-        await Until(() => gateway.Service.IsLive(connectionId));
+        await TestWait.WaitUntilAsync(() => gateway.Service.IsLive(connectionId));
         var first = adapter.SessionFor(connectionId)!;
 
         first.Drop();
 
-        await Until(() => adapter.SessionFor(connectionId) != first && gateway.Service.IsLive(connectionId));
+        await TestWait.WaitUntilAsync(() => adapter.SessionFor(connectionId) != first && gateway.Service.IsLive(connectionId));
         Assert.True(first.Disposed);
     }
 
@@ -99,7 +99,7 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
         var oldAdapter = new FakeChatPlatformAdapter();
         var newAdapter = new FakeChatPlatformAdapter();
         var oldGateway = await StartAsync(oldAdapter, authority);
-        await Until(() => oldGateway.Service.IsLive(connectionId));
+        await TestWait.WaitUntilAsync(() => oldGateway.Service.IsLive(connectionId));
         await using var newGateway = await StartAsync(newAdapter, authority);
 
         await Task.Delay(100);
@@ -108,7 +108,7 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
 
         await oldGateway.DisposeAsync();
 
-        await Until(() => newGateway.Service.IsLive(connectionId));
+        await TestWait.WaitUntilAsync(() => newGateway.Service.IsLive(connectionId));
         Assert.All(oldAdapter.Sessions, s => Assert.True(s.Disposed));
     }
 
@@ -120,11 +120,11 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
         var authority = new FakeLeaseAuthority();
         var adapter = new FakeChatPlatformAdapter();
         await using var gateway = await StartAsync(adapter, authority);
-        await Until(() => gateway.Service.IsLive(connectionId));
+        await TestWait.WaitUntilAsync(() => gateway.Service.IsLive(connectionId));
 
         authority.StealForever();
 
-        await Until(() => !gateway.Service.IsLive(connectionId) && adapter.SessionFor(connectionId)!.Disposed);
+        await TestWait.WaitUntilAsync(() => !gateway.Service.IsLive(connectionId) && adapter.SessionFor(connectionId)!.Disposed);
         Assert.False(gateway.Service.HoldsLease);
     }
 
@@ -137,7 +137,7 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
         var adapter = new FakeChatPlatformAdapter();
         var participant = new RecordingParticipant();
         await using var gateway = await StartAsync(adapter, authority, [participant]);
-        await Until(() => gateway.Service.IsLive(connectionId));
+        await TestWait.WaitUntilAsync(() => gateway.Service.IsLive(connectionId));
         var session = adapter.SessionFor(connectionId)!;
         var hang = new TaskCompletionSource();
         session.DisposeHang = hang;
@@ -146,7 +146,7 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
 
         try
         {
-            await Until(() => participant.Count("lost") > 0);
+            await TestWait.WaitUntilAsync(() => participant.Count("lost") > 0);
             Assert.False(session.Disposed);
         }
         finally
@@ -154,7 +154,7 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
             hang.SetResult();
         }
 
-        await Until(() => session.Disposed);
+        await TestWait.WaitUntilAsync(() => session.Disposed);
     }
 
     [Fact]
@@ -163,7 +163,7 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
         var participant = new RecordingParticipant();
         await using var gateway = await StartAsync(new FakeChatPlatformAdapter(), new FakeLeaseAuthority(), [participant]);
 
-        await Until(() => participant.Count("renewed") >= 3);
+        await TestWait.WaitUntilAsync(() => participant.Count("renewed") >= 3);
 
         Assert.Equal(0, participant.Count("lost"));
     }
@@ -175,7 +175,7 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
         var order = new ConcurrentQueue<string>();
         var participant = new RecordingParticipant(order);
         var gateway = await StartAsync(new FakeChatPlatformAdapter(), new FakeLeaseAuthority(), [participant], order);
-        await Until(() => participant.Count("renewed") > 0);
+        await TestWait.WaitUntilAsync(() => participant.Count("renewed") > 0);
 
         await gateway.DisposeAsync();
 
@@ -191,7 +191,7 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
     {
         var participant = new RecordingParticipant { ThrowOnLost = true };
         var gateway = await StartAsync(new FakeChatPlatformAdapter(), new FakeLeaseAuthority(), [participant]);
-        await Until(() => participant.Count("renewed") > 0);
+        await TestWait.WaitUntilAsync(() => participant.Count("renewed") > 0);
 
         await gateway.Service.StopAsync(CancellationToken.None);
         await gateway.Service.StopAsync(CancellationToken.None);
@@ -209,11 +209,11 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
         var authority = new FakeLeaseAuthority();
         var adapter = new FakeChatPlatformAdapter();
         await using var gateway = await StartAsync(adapter, authority, [hung, fine]);
-        await Until(() => gateway.Service.IsLive(connectionId));
+        await TestWait.WaitUntilAsync(() => gateway.Service.IsLive(connectionId));
 
         authority.StealForever();
 
-        await Until(() => fine.Count("lost") > 0);
+        await TestWait.WaitUntilAsync(() => fine.Count("lost") > 0);
         Assert.Equal(1, hung.Count("lost"));
     }
 
@@ -223,14 +223,14 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
         var (userId, connectionId) = await NewConnectionAsync();
         var adapter = new FakeChatPlatformAdapter();
         await using var gateway = await StartAsync(adapter, new FakeLeaseAuthority());
-        await Until(() => gateway.Service.IsLive(connectionId));
+        await TestWait.WaitUntilAsync(() => gateway.Service.IsLive(connectionId));
         var first = adapter.SessionFor(connectionId)!;
 
         await Store(userId).SetCredentialsAsync(connectionId, _protector.Protect(new ChatCredentials("rotated")),
             new ChatBotIdentity("1", "bot"), Now);
         await gateway.Service.RestartAsync(userId, connectionId);
 
-        await Until(() => adapter.SessionFor(connectionId) != first && gateway.Service.IsLive(connectionId));
+        await TestWait.WaitUntilAsync(() => adapter.SessionFor(connectionId) != first && gateway.Service.IsLive(connectionId));
         Assert.True(first.Disposed);
         Assert.Equal("rotated", adapter.SessionFor(connectionId)!.Runtime.Credentials.BotToken);
     }
@@ -242,7 +242,7 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
         var (userId, connectionId) = await NewConnectionAsync();
         var adapter = new FakeChatPlatformAdapter();
         await using var gateway = await StartAsync(adapter, new FakeLeaseAuthority());
-        await Until(() => gateway.Service.IsLive(connectionId));
+        await TestWait.WaitUntilAsync(() => gateway.Service.IsLive(connectionId));
 
         await Store(userId).DeleteAsync(connectionId);
         await gateway.Service.RestartAsync(userId, connectionId);
@@ -261,7 +261,7 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
         await store.SetCredentialsAsync(created!.Id, "not-a-ciphertext", new ChatBotIdentity("1", "bot"), Now);
         await using var gateway = await StartAsync(new FakeChatPlatformAdapter(), new FakeLeaseAuthority());
 
-        await Until(async () => (await store.GetAsync(created.Id))!.FaultReason is not null);
+        await TestWait.WaitUntilAsync(async () => (await store.GetAsync(created.Id))!.FaultReason is not null);
 
         Assert.Contains("Paste it again", (await store.GetAsync(created.Id))!.FaultReason);
     }
@@ -287,19 +287,6 @@ public sealed class ChatGatewayServiceTests(SharedClusterFixture fixture) : Shar
             participants ?? [], new ChatSessionRegistry(), TimeProvider.System, NullLogger<ChatGatewayService>.Instance, Fast);
         await service.StartAsync(CancellationToken.None);
         return new RunningGateway(service);
-    }
-
-    internal static async Task Until(Func<bool> condition) => await Until(() => Task.FromResult(condition()));
-
-    internal static async Task Until(Func<Task<bool>> condition)
-    {
-        // Generous: the full suite runs ~2,900 tests in parallel, and a starved thread pool can take seconds per step.
-        var deadline = DateTime.UtcNow.AddSeconds(30);
-        while (!await condition())
-        {
-            Assert.True(DateTime.UtcNow < deadline, "Timed out waiting for the condition.");
-            await Task.Delay(10);
-        }
     }
 
     private sealed class RunningGateway(ChatGatewayService service) : IAsyncDisposable

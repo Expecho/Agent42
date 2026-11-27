@@ -63,7 +63,7 @@ public sealed class AgentWebhookGrainTests(SharedClusterFixture fixture) : Share
         {
             await webhook.DeliverAsync(Event($"conv-{i}"));
             var sent = i + 1;
-            await PollUntilAsync(() => SendsTo(url).Count == sent);
+            await TestWait.WaitUntilAsync(() => SendsTo(url).Count == sent);
         }
 
         var deliveries = await PollDeliveriesAsync(webhook, d => d.Count == WebhookLimits.MaxDeliveryLog);
@@ -100,7 +100,7 @@ public sealed class AgentWebhookGrainTests(SharedClusterFixture fixture) : Share
         HoldAll();
 
         await webhook.DeliverAsync(Event("slow"));
-        await PollUntilAsync(() => Waiting() == 1);
+        await TestWait.WaitUntilAsync(() => Waiting() == 1);
 
         var within = TimeSpan.FromSeconds(5);
         await webhook.GetAsync().WaitAsync(within);
@@ -120,12 +120,12 @@ public sealed class AgentWebhookGrainTests(SharedClusterFixture fixture) : Share
         HoldAll();
 
         await webhook.DeliverAsync(Event("in-flight"));
-        await PollUntilAsync(() => Waiting() == 1);
+        await TestWait.WaitUntilAsync(() => Waiting() == 1);
         await webhook.ClearAsync();
         await webhook.SaveAsync("https://new.example.com/hook", "new-secret");
 
         ReleaseAll();
-        await PollUntilAsync(() => Waiting() == 0);
+        await TestWait.WaitUntilAsync(() => Waiting() == 0);
         await Task.Delay(200);
 
         Assert.Empty((await webhook.GetAsync()).Deliveries);
@@ -238,23 +238,7 @@ public sealed class AgentWebhookGrainTests(SharedClusterFixture fixture) : Share
     private static async Task<IReadOnlyList<WebhookDeliveryRecord>> PollDeliveriesAsync(
         IAgentWebhookGrain webhook, Func<IReadOnlyList<WebhookDeliveryRecord>, bool> until)
     {
-        var deliveries = (await webhook.GetAsync()).Deliveries;
-        for (var attempt = 0; attempt < 300 && !until(deliveries); attempt++)
-        {
-            await Task.Delay(100);
-            deliveries = (await webhook.GetAsync()).Deliveries;
-        }
-
-        return deliveries;
+        return await TestWait.WaitForAsync(async () => (await webhook.GetAsync()).Deliveries, until, "the delivery log to reach the expected state");
     }
 
-    private static async Task PollUntilAsync(Func<bool> condition)
-    {
-        for (var attempt = 0; attempt < 300 && !condition(); attempt++)
-        {
-            await Task.Delay(100);
-        }
-
-        Assert.True(condition());
-    }
 }

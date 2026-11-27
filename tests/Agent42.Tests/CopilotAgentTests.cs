@@ -147,17 +147,7 @@ public sealed class CopilotAgentTests(SharedClusterFixture fixture) : SharedClus
     private static async Task<IReadOnlyList<ChatTurn>> PollHistoryAsync(
         IAgentGrain agent, Func<IReadOnlyList<ChatTurn>, bool> until)
     {
-        IReadOnlyList<ChatTurn> history = [];
-        for (var attempt = 0; attempt < 50 && !until(history); attempt++)
-        {
-            history = await agent.GetHistoryAsync();
-            if (!until(history))
-            {
-                await Task.Delay(100);
-            }
-        }
-
-        return history;
+        return await TestWait.WaitForAsync(() => agent.GetHistoryAsync(), until, "the history to reach the expected state");
     }
 
     // AC9: Copilot gets the tools selection grants, as functions only. A hosted-tools model still gets the SearXNG

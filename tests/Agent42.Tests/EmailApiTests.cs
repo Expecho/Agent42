@@ -284,19 +284,8 @@ public sealed class EmailApiTests(EmailApiFixture fixture) : SharedClusterTests<
     // The turn runs in the background (OneWay), so the reply is not present the instant 200 returns.
     private async Task<List<ChatTurn>> PollMessagesAsync(string user, string convId, Func<List<ChatTurn>, bool> until)
     {
-        List<ChatTurn> turns = [];
-        for (var attempt = 0; attempt < 50; attempt++)
-        {
-            turns = await GetAsync<List<ChatTurn>>(user, $"/api/conversations/{convId}/messages");
-            if (until(turns))
-            {
-                return turns;
-            }
-
-            await Task.Delay(100);
-        }
-
-        return turns;
+        return await TestWait.WaitForAsync(
+            () => GetAsync<List<ChatTurn>>(user, $"/api/conversations/{convId}/messages"), until, "the background turn's messages");
     }
 
     private static HttpRequestMessage Request(HttpMethod method, string uri, string principalId, object? body = null)

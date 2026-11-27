@@ -65,11 +65,8 @@ public sealed class FleetLauncherTests : IAsyncDisposable
         var (taskId, error) = await _launcher.StartAsync(Alice, "conv-1", OnePlan, model, followUpOf: null);
         Assert.Null(error);
 
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        while (await _service.GetAsync(Alice, taskId!, timeout.Token) is not { Status: not FleetTaskStatus.Running })
-        {
-            await Task.Delay(20, timeout.Token);
-        }
+        await TestWait.WaitUntilAsync(
+            async () => await _service.GetAsync(Alice, taskId!) is { Status: not FleetTaskStatus.Running }, "the task to finish");
 
         return (await _store.GetTaskAsync(Alice, taskId!))!;
     }

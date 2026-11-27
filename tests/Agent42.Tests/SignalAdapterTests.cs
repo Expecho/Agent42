@@ -64,10 +64,10 @@ public sealed class SignalAdapterTests
     {
         var sink = new RecordingSink();
         await using var session = await ConnectAsync(sink);
-        await _daemon.WaitForOpensAsync(Number, 1);
+        await TestWait.WaitUntilAsync(() => _daemon.StreamOpens.GetValueOrDefault(Number) >= 1, "the daemon stream to open 1 time(s)");
 
         await _daemon.EndStreamAsync(Number);
-        await _daemon.WaitForOpensAsync(Number, 2);
+        await TestWait.WaitUntilAsync(() => _daemon.StreamOpens.GetValueOrDefault(Number) >= 2, "the daemon stream to open 2 time(s)");
         await _daemon.PushAsync(Number, Dm("after the restart"));
 
         Assert.Equal("after the restart", (await sink.NextAsync()).Text);

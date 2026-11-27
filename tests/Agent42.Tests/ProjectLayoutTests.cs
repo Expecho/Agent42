@@ -967,4 +967,111 @@ public sealed class ProjectLayoutTests
         Assert.True(dir is not null, "Could not locate repo root (Agent42.slnx) from " + AppContext.BaseDirectory);
         return dir!.FullName;
     }
+
+    // ---- Tests wait through TestWait, never through a private poll loop (clean-code programme, plan cc-02) ----
+
+    private static readonly Regex PollHelperDeclaration = new(
+        @"^\s*(?:(?:public|private|internal|protected|static|async)\s+)+[\w<>\[\],.? ]+\s+(?:PollUntil\w*|WaitUntil\w*|Until|PollAsync|WaitFor\w*)\s*[(<]",
+        RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
+    private static readonly Regex LoopHeader = new(@"^\s*(?:while|for)\s*\(", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Finds a private poll-until helper in <paramref name="source"/> by NAME (a declaration called
+    /// PollUntil/WaitUntil/Until/PollAsync/WaitFor*) and by SHAPE (a <c>Task.Delay</c> a few lines under a
+    /// <c>while</c>/<c>for</c> header, whatever the method is called). Names vary across the suite, so a name
+    /// check alone would let a copy through under a new name.
+    /// </summary>
+    internal static IReadOnlyList<string> PollHelperFindings(string source, string fileName = "")
+    {
+        var findings = new List<string>();
+        foreach (Match m in PollHelperDeclaration.Matches(source))
+        {
+            findings.Add($"declares a poll helper by name: {m.Value.Trim()}");
+        }
+
+        var lines = source.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (lines[i].Contains("Task.Delay(", StringComparison.Ordinal) && EnclosingLoop(lines, i, fileName) is { } j)
+            {
+                findings.Add($"line {i + 1}: Task.Delay inside a loop (line {j + 1}): {lines[j].Trim()}");
+            }
+        }
+
+        return findings;
+    }
+
+    // The loop header enclosing line i, or null. Climbs through EVERY enclosing block up to the method (member indent 4):
+    // a delay nested under an `if` inside a loop is still a poll loop.
+    private static int? EnclosingLoop(string[] lines, int i, string fileName)
+    {
+        var minIndent = lines[i].Length - lines[i].TrimStart().Length;
+        for (var j = i - 1; j >= 0 && j >= i - 80; j--)
+        {
+            var text = lines[j].Trim();
+            var lineIndent = lines[j].Length - lines[j].TrimStart().Length;
+            if (text.Length == 0 || text == "{" || lineIndent >= minIndent)
+            {
+                continue;
+            }
+
+            minIndent = lineIndent;
+            if (LoopHeader.IsMatch(lines[j]))
+            {
+                return SleepLoopAllowlist.Contains($"{fileName}|{text}", StringComparer.Ordinal) ? null : j;
+            }
+
+            if (lineIndent <= 4)
+            {
+                break;
+            }
+        }
+
+        return null;
+    }
+
+    // "File.cs|loop header" entries whose sleep is not "wait for a condition": a fake's blocking acquire, pacing a stream, a fake clock.
+    private static readonly string[] SleepLoopAllowlist =
+    [
+        "ChatGatewayServiceTests.cs|while (!authority.TryTake(this))", // ChatGatewayServiceTests: a fake lease that blocks like the real one
+        "ChatReplyStreamerTests.cs|for (var i = 0; i < 8; i++)", // ChatReplyStreamerTests: feeds the streamer parts at a pace
+        "SignalDaemonTests.cs|for (var i = 0; i < 4000 && !task.IsCompleted; i++)", // SignalDaemonTests.Pump: drives a fake clock, not a wait
+    ];
+
+    [Fact]
+    public void NoTestFile_DeclaresItsOwnPollHelper()
+    {
+        var tests = Path.Combine(RepoRoot(), "tests", "Agent42.Tests");
+        var offenders = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(tests, "*.cs", SearchOption.AllDirectories))
+        {
+            var name = Path.GetFileName(file);
+            if (name is "TestWait.cs" or "TestWaitTests.cs" or "ProjectLayoutTests.cs"
+                || file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                || file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+            {
+                continue;
+            }
+
+            offenders.AddRange(PollHelperFindings(File.ReadAllText(file), name).Select(f => $"{name}: {f}"));
+        }
+
+        Assert.True(offenders.Count == 0,
+            "Use TestWait.WaitUntilAsync / WaitForAsync instead of a private poll loop:\n" + string.Join('\n', offenders));
+    }
+
+    // The guard above is only worth having if it can fail: prove it on planted copies, under a new name, with the
+    // delay directly under the loop, and with it nested one block deeper (a regex that matches nothing would make
+    // the test above vacuous).
+    [Theory]
+    [InlineData("    private static async Task Settle(Func<bool> c)\n    {\n        for (var i = 0; i < 100 && !c(); i++)\n        {\n            await Task.Delay(10);\n        }\n    }\n")]
+    [InlineData("    private static async Task Settle(Func<bool> c)\n    {\n        for (var i = 0; i < 100; i++)\n        {\n            if (c())\n            {\n                return;\n            }\n\n            await Task.Delay(10);\n        }\n    }\n")]
+    [InlineData("    private static async Task Settle(Func<bool> c)\n    {\n        for (var i = 0; i < 100; i++)\n        {\n            if (!c())\n            {\n                await Task.Delay(100);\n            }\n        }\n    }\n")]
+    [InlineData("    private static async Task PollUntilAsync(Func<bool> c)\n    {\n        await TestWait.WaitUntilAsync(c);\n    }\n")]
+    public void PollHelperGuard_FlagsAPlantedCopy(string source) => Assert.NotEmpty(PollHelperFindings(source));
+
+    [Fact]
+    public void PollHelperGuard_AcceptsAPlainUseOfTestWait() =>
+        Assert.Empty(PollHelperFindings("    await TestWait.WaitUntilAsync(() => x.Done, \"x\");\n    await Task.Delay(5);\n"));
 }

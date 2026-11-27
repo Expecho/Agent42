@@ -649,19 +649,9 @@ public sealed class AgentMcpServerTests(AgentMcpFixture fixture) : SharedCluster
 
     private async Task<List<ChatTurn>> PollMessagesAsync(string convId, Func<List<ChatTurn>, bool> until)
     {
-        List<ChatTurn> turns = [];
-        for (var attempt = 0; attempt < 50; attempt++)
-        {
-            turns = (await Client.GetFromJsonAsync<List<ChatTurn>>($"/api/conversations/{convId}/messages"))!;
-            if (until(turns))
-            {
-                return turns;
-            }
-
-            await Task.Delay(100);
-        }
-
-        return turns;
+        return await TestWait.WaitForAsync(
+            async () => (await Client.GetFromJsonAsync<List<ChatTurn>>($"/api/conversations/{convId}/messages"))!,
+            until, "the background turn's messages");
     }
 
     // Aggregated across every silo, for the reason AgentGrainTests gives: the recorder is a per-silo

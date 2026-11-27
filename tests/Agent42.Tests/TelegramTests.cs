@@ -202,7 +202,7 @@ public sealed class TelegramAdapterTests : IAsyncLifetime
         Assert.DoesNotContain(_server.Requests, r => r.Method == "getUpdates");
         session.Start();
 
-        await ChatGatewayServiceTests.Until(() => commits.Contains(43) && _server.Requests.Count(r => r.Method == "getUpdates") >= 2);
+        await TestWait.WaitUntilAsync(() => commits.Contains(43) && _server.Requests.Count(r => r.Method == "getUpdates") >= 2);
         Assert.Equal("one", Assert.Single(sink.Messages).Text);
         var polls = _server.Requests.Where(r => r.Method == "getUpdates").Select(r => r.Body["offset"]!.GetValue<long>()).ToList();
         Assert.Equal([40, 43], polls.Take(2));
@@ -223,7 +223,7 @@ public sealed class TelegramAdapterTests : IAsyncLifetime
         await using var session = await Adapter.ConnectAsync(Runtime(offset: 50, commits), sink, CancellationToken.None);
         session.Start();
 
-        await ChatGatewayServiceTests.Until(() => commits.Contains(52));
+        await TestWait.WaitUntilAsync(() => commits.Contains(52));
         Assert.Equal("fine", Assert.Single(sink.Messages).Text);
         Assert.False(session.Completion.IsCompleted);
     }

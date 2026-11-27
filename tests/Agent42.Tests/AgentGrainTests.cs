@@ -708,7 +708,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
 
         await agent.EnqueuePromptAsync("hi", null);
 
-        await PollUntilAsync(() => SendsFor("push-enqueue-user").Count >= 1);
+        await TestWait.WaitUntilAsync(() => SendsFor("push-enqueue-user").Count >= 1);
         var send = Assert.Single(SendsFor("push-enqueue-user"));
         Assert.Equal("push-enqueue-user", send.UserId);
         Assert.Equal("push-enqueue-conv", send.Message.ConversationId);
@@ -1021,14 +1021,14 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         await agent.EnqueuePromptAsync("send me a notification", null);
 
         // Waiting for the FIRST send is not enough, and the difference is the whole test. The tool's push
-        // is recorded DURING the drain; the away-reply push would be sent AFTER it. PollUntilAsync returns
+        // is recorded DURING the drain; the away-reply push would be sent AFTER it. TestWait.WaitUntilAsync returns
         // the instant one send exists, so an Assert.Single there would frequently pass even with the
         // suppression deleted — it would simply be reading before the second send happened.
         //
         // AgentGrain is NON-REENTRANT, so this grain call queues behind the OneWay turn and returns only
         // once the whole of EnqueuePromptAsync — including the away-reply call site after the drain — has
         // run. That is what makes the assertion below deterministic rather than a race won by luck.
-        await PollUntilAsync(() => SendsFor("push-suppress-run-user").Count >= 1);
+        await TestWait.WaitUntilAsync(() => SendsFor("push-suppress-run-user").Count >= 1);
         await agent.GetHistoryAsync();
 
         var send = Assert.Single(SendsFor("push-suppress-run-user"));
@@ -1071,18 +1071,6 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         await CollectAsync(agent.ChatAsync("send me a notification", null));
 
         Assert.Empty(SendsFor("push-legacy-user"));
-    }
-
-    // Polls a condition until it holds or a bound elapses — for the OneWay agent-run push, which the
-    // sender records after EnqueuePromptAsync has already returned to the caller. The bound is generous
-    // (30s) because the background turn drains the whole ChatCoreAsync pipeline and runs far slower under
-    // coverage instrumentation + parallel test load; the loop exits the instant the condition holds.
-    private static async Task PollUntilAsync(Func<bool> condition)
-    {
-        for (var attempt = 0; attempt < 300 && !condition(); attempt++)
-        {
-            await Task.Delay(100);
-        }
     }
 
     [Fact]
@@ -1453,19 +1441,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
     private static async Task<IReadOnlyList<ChatTurn>> PollHistoryAsync(
         IAgentGrain agent, Func<IReadOnlyList<ChatTurn>, bool> until)
     {
-        IReadOnlyList<ChatTurn> history = [];
-        for (var attempt = 0; attempt < 50; attempt++)
-        {
-            history = await agent.GetHistoryAsync();
-            if (until(history))
-            {
-                return history;
-            }
-
-            await Task.Delay(100);
-        }
-
-        return history;
+        return await TestWait.WaitForAsync(() => agent.GetHistoryAsync(), until, "the history to reach the expected state");
     }
 
     // AC9 (grain level): an image handed to the background run rides the same AttachmentRef path as a
@@ -4040,7 +4016,7 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
 
         provider.HasModel = true;
         await agent.EnqueuePromptAsync("hello", null);
-        await PollUntilAsync(() => recorder.Sends.Count >= 1);
+        await TestWait.WaitUntilAsync(() => recorder.Sends.Count >= 1);
         Assert.Single(recorder.Sends);
     }
 

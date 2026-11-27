@@ -77,7 +77,7 @@ public sealed class FleetApiTests(FleetApiFixture fixture) : SharedClusterTests<
         var response = await Send(HttpMethod.Post, "/api/fleet/tasks", user, new { task = Task(), model = FleetRunHarness.ModelA });
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
         var taskId = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("taskId").GetString()!;
-        await WaitForEventAsync(user, taskId, "\"type\":\"prompt\"");
+        await ReadEventsUntilAsync(user, taskId, "\"type\":\"prompt\"");
         return taskId;
     }
 
@@ -85,18 +85,16 @@ public sealed class FleetApiTests(FleetApiFixture fixture) : SharedClusterTests<
     {
         var taskId = await SubmitHeldAsync(user);
         (await Send(HttpMethod.Post, $"/api/fleet/tasks/{taskId}/stop", user)).EnsureSuccessStatusCode();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        while ((await (await Send(HttpMethod.Get, $"/api/fleet/tasks/{taskId}", user)).Content.ReadFromJsonAsync<JsonElement>())
-            .GetProperty("status").GetString() == FleetTaskStatus.Running)
-        {
-            await System.Threading.Tasks.Task.Delay(20, timeout.Token);
-        }
+        await TestWait.WaitUntilAsync(
+            async () => (await (await Send(HttpMethod.Get, $"/api/fleet/tasks/{taskId}", user)).Content.ReadFromJsonAsync<JsonElement>())
+                .GetProperty("status").GetString() != FleetTaskStatus.Running,
+            "the stopped task to leave Running");
 
         return taskId;
     }
 
     // Reads the SSE stream until a line contains the marker; returns everything read.
-    private async Task<string> WaitForEventAsync(string user, string taskId, string marker)
+    private async Task<string> ReadEventsUntilAsync(string user, string taskId, string marker)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         using var response = await Client.SendAsync(Request(HttpMethod.Get, $"/api/fleet/tasks/{taskId}/events", user),
@@ -259,7 +257,7 @@ public sealed class FleetApiTests(FleetApiFixture fixture) : SharedClusterTests<
         Assert.Equal(HttpStatusCode.Conflict, empty.StatusCode);
 
         (await Send(HttpMethod.Post, $"/api/fleet/tasks/{taskId}/stop", user)).EnsureSuccessStatusCode();
-        await WaitForEventAsync(user, taskId, "task.finished");
+        await ReadEventsUntilAsync(user, taskId, "task.finished");
 
         Assert.Equal(HttpStatusCode.Conflict, (await Send(HttpMethod.Post, $"/api/fleet/tasks/{taskId}/stop", user)).StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, (await Send(HttpMethod.Post, $"/api/fleet/tasks/{taskId}/answer", user, new { answer = "y" })).StatusCode);
@@ -273,7 +271,7 @@ public sealed class FleetApiTests(FleetApiFixture fixture) : SharedClusterTests<
         var taskId = await SubmitHeldAsync(user);
 
         (await Send(HttpMethod.Post, $"/api/fleet/tasks/{taskId}/answer", user, new { answer = "y" })).EnsureSuccessStatusCode();
-        var stream = await WaitForEventAsync(user, taskId, "task.finished");
+        var stream = await ReadEventsUntilAsync(user, taskId, "task.finished");
 
         Assert.Contains("\"type\":\"task.started\"", stream);
         Assert.Contains("\"type\":\"plan.accepted\"", stream);
@@ -288,7 +286,7 @@ public sealed class FleetApiTests(FleetApiFixture fixture) : SharedClusterTests<
         try
         {
             // The task waits on its question, so nothing is published: only the keep-alive comment arrives.
-            var stream = await WaitForEventAsync(user, taskId, ": keep-alive");
+            var stream = await ReadEventsUntilAsync(user, taskId, ": keep-alive");
 
             Assert.Contains(": keep-alive", stream);
             Assert.Contains("data: {\"seq\":1,\"type\":\"task.started\"", stream);

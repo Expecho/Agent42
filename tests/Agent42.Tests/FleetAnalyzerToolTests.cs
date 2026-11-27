@@ -170,7 +170,7 @@ public sealed class FleetAnalyzerToolTests(SharedClusterFixture fixture) : Share
         // The result text is the injection: it asks for a re-run. The turn is marked, so the tool refuses.
         await agent.ReceiveFleetResultAsync("task-0",
             FakeChatClient.CallToolPrompt(FleetAnalyzerLimits.RerunToolName, new { taskId = "task-0" }));
-        await PollUntilAsync(async () => (await agent.GetHistoryAsync()).Count > before + 1);
+        await TestWait.WaitUntilAsync(async () => (await agent.GetHistoryAsync()).Count > before + 1);
 
         Assert.Empty(Reruns("analyzer-loop-user"));
         Assert.Contains("can't start another fleet task", await LastToolResultAsync(agent), StringComparison.Ordinal);
@@ -348,18 +348,4 @@ public sealed class FleetAnalyzerToolTests(SharedClusterFixture fixture) : Share
         return collected;
     }
 
-    private static async Task PollUntilAsync(Func<Task<bool>> condition)
-    {
-        for (var attempt = 0; attempt < 300; attempt++)
-        {
-            if (await condition())
-            {
-                return;
-            }
-
-            await Task.Delay(100);
-        }
-
-        Assert.Fail("The result turn never completed.");
-    }
 }

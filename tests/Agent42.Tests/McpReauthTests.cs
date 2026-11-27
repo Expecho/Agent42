@@ -168,7 +168,7 @@ public sealed class McpReauthTests(SharedClusterFixture fixture) : SharedCluster
         var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>("reauth-background-user/conv");
 
         await agent.EnqueuePromptAsync("hi", null);
-        await PollAsync(async () => (await agent.GetHistoryAsync()).Any(t => t.Role == "assistant"));
+        await TestWait.WaitUntilAsync(async () => (await agent.GetHistoryAsync()).Any(t => t.Role == "assistant"));
 
         Assert.Single(Notices(await Chat(agent)));
     }
@@ -252,18 +252,4 @@ public sealed class McpReauthTests(SharedClusterFixture fixture) : SharedCluster
         Assert.Empty(Notices(after));
     }
 
-    private static async Task PollAsync(Func<Task<bool>> until)
-    {
-        for (var attempt = 0; attempt < 50; attempt++)
-        {
-            if (await until())
-            {
-                return;
-            }
-
-            await Task.Delay(100);
-        }
-
-        Assert.Fail("condition not reached");
-    }
 }

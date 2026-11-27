@@ -359,14 +359,8 @@ public sealed class AgentWebhookTurnTests(SharedClusterFixture fixture) : Shared
 
     private async Task<List<AgentWebhookEvent>> PollEventsAsync(string url, int atLeast)
     {
-        for (var attempt = 0; attempt < 300 && EventsTo(url).Count < atLeast; attempt++)
-        {
-            await Task.Delay(100);
-        }
-
-        var events = EventsTo(url);
-        Assert.True(events.Count >= atLeast, $"expected {atLeast} webhook event(s) to {url}, got {events.Count}");
-        return events;
+        await TestWait.WaitUntilAsync(() => EventsTo(url).Count >= atLeast, $"{atLeast} webhook event(s) to {url}");
+        return EventsTo(url);
     }
 
     private List<FakeChatClient.StreamGate> OpenStreamGates() =>
