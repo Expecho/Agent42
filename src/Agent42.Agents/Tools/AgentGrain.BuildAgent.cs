@@ -294,7 +294,7 @@ public sealed partial class AgentGrain
             _readDocument.Function(),
             // The three artifact tools, built in their own part: unconditional like push, since no hosted tool
             // provides them. A spread, not inline, because this method has little S3776 headroom.
-            .. ArtifactTools(),
+            .. _artifactTools.Tools(),
             // The browser-run client tools (ADR 0089), unconditional for the same reason: no hosted tool provides
             // them. Each answers "unavailable" by itself on a run with no browser, so registering them is safe.
             .. ClientTools(),

@@ -32,6 +32,12 @@ holds `read_web_document`; it gets the chat-client factory as a `Func` (the grai
 `WriteStateAsync` as a named `persistNow` (the one write it needs, made before the excerpts are ranked, as before). The
 deferred agent rebuild (`RebuildForIngestedWebDocumentAsync`) stays a grain partial because it swaps `_agent` and `_session`.
 
+**Step 3: `ArtifactList` + `ArtifactToolSet`.** `ArtifactList` (count, try-get, add) is the port; a version append or title
+change mutates the record it returns. `ArtifactToolSet` holds `create_artifact`, `update_artifact`, `read_artifact`, the
+validation and `UnknownArtifact`/`VersionList` (now `internal` statics that `ClientTools` calls). The compaction half
+(`CompactToolPayloads`, `ParseArtifactResult`, `ArtifactsFromToolCalls`, ...) stays in `AgentGrain.ArtifactCompaction.cs` with
+`GetArtifactsAsync` and the three tool-name consts. The pane, purge and fork still read or replace the dictionary directly.
+
 **The call sites are the control.** A fired reminder never feeds the list because `ReceiveReminder` calls the agent directly
 and never reaches `BuildUserTurnAsync`; there is deliberately no `TurnContext` check or flag in the port, because every turn
 kind that does reach it has an open context. Agent-run and fleet-result turns feeding the list is existing behaviour, kept.

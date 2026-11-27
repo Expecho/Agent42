@@ -102,11 +102,11 @@ public sealed partial class AgentGrain
 
         if (!_state.State.Artifacts.TryGetValue(artifactId ?? "", out var record))
         {
-            return UnknownArtifact(artifactId);
+            return ArtifactToolSet.UnknownArtifact(artifactId);
         }
 
         return version is { } wanted && record.Versions.TrueForAll(v => v.Version != wanted)
-            ? $"Artifact {record.Id} has versions {VersionList(record)}; there is no version {wanted}."
+            ? $"Artifact {record.Id} has versions {ArtifactToolSet.VersionList(record)}; there is no version {wanted}."
             : null;
     }
 

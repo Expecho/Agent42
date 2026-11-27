@@ -160,6 +160,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     private WebTools _webTools = null!;
     private WebDocumentList _webDocuments = null!;
     private WebDocumentTool _webDocumentTool = null!;
+    private ArtifactToolSet _artifactTools = null!;
 
     // The user's DEFAULT selectable-tools set (ADR 0021), read ONCE on activation from IUserProfileGrain —
     // null means "all selectable tools" (the null==all sentinel). It is the middle layer of the resolution
@@ -290,6 +291,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _forking = new ConversationForking(_attachments, _logger);
         _fetchableUrls = new FetchableUrlList(() => _state.State);
         _webTools = new WebTools(_webSearch, _logger, this.GetPrimaryKeyString(), _fetchableUrls);
+        _artifactTools = new ArtifactToolSet(
+            new ArtifactList(() => _state.State), _attachments, _timeProvider, _logger, this.GetPrimaryKeyString());
         _webDocuments = new WebDocumentList(() => _state.State);
         _webDocumentTool = new WebDocumentTool(
             _fetchableUrls, _webDocuments, _webDocumentFetcher, _documentIngestor, _logger, this.GetPrimaryKeyString(),
