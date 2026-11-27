@@ -1,4 +1,4 @@
-# Plan: clean-code programme (COMPLETE, cc-01 to cc-11; master — read this first, then the child plan for your session)
+# Plan: clean-code programme (COMPLETE, cc-01 to cc-12; master — read this first, then the child plan for your session)
 
 planned-against: main @ 02ebdf0
 
@@ -84,7 +84,7 @@ existing test suite staying green plus the narrow new tests the child names.
 | 09 | `completed/plan-cc-09-grain-leaf-tools.md` | `feature/cc-09-grain-leaf-tools` | done (pending merge) | |
 | 10 | `completed/plan-cc-10-grain-tier-b.md` | `feature/cc-10-grain-tier-b` | done (pending merge): only the two read-only partials, ADR 0148; write-based partials stay | |
 | 11 | `completed/plan-cc-11-enforce-and-docs.md` | `feature/cc-11-enforce-and-docs` | done (pending merge): S138 80 + S107 11 gates, ADR 0149 | |
-| 12 | `plan-cc-12-grain-tier-b-write-partials.md` | `feature/cc-12-<n>-<slug>` | optional follow-up to 10, not started | |
+| 12 | `completed/plan-cc-12-grain-tier-b-write-partials.md` | `feature/cc-12-<n>-<slug>` | done: steps 1-5 merged (#306-#310), ADR 0150; Attachments, ModelRouting, `RegisterDocumentAsync` and the compaction half stay | |
 
 ## Shared constraints (every child inherits these)
 

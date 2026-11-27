@@ -64,7 +64,10 @@ only through `new UrlHarvestingMcpTool(...)`, and that nothing but `FetchableUrl
 
 ## Consequences
 - ADR 0147's "must write state stays a partial" and ADR 0148's Consequences no longer hold for partials with a port.
-- Still partials, by decision: `Attachments`, `ModelRouting`, `RegisterDocumentAsync` and the compaction half of
-  `ArtifactTools` (they need several ports or touch the live session/agent).
+- Still in the grain, by decision, and why: `Attachments` (mutates the live session and the positional `TurnAttachments`
+  join, ADR 0004/0013; it would need about four ports), `ModelRouting` (writes `AutoModel`, swaps `_chatClientFactory`, reads
+  the grain-wide `_runsInFlight`, ADR 0106), `RegisterDocumentAsync` (swaps `_agent` and `_session`), the deferred web-document
+  rebuild (same reason), and the compaction half of the artifact feature (the persist tail, fork, image turn and retention
+  call it).
 - No tool key, description or parameter changed; persisted types are untouched.
-- Later steps of the plan amend this ADR as each partial moves.
+- The plan is complete (steps 1-5, PRs #306-#310). Each step's section above records what moved and what stayed.
