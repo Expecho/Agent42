@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text;
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.Logging;
 
 namespace Agent42.Agents;
 
@@ -159,7 +160,7 @@ public static class SkillPackage
     /// The text of <c>{name}/SKILL.md</c> in a stored (normalized) skill zip, or null when the zip has no such entry or
     /// cannot be read. Read-only: the zip is one this process wrote, but a corrupt blob must not throw into a caller.
     /// </summary>
-    public static string? ReadSkillMarkdown(byte[] zip, string name)
+    public static string? ReadSkillMarkdown(byte[] zip, string name, ILogger? logger = null)
     {
         try
         {
@@ -176,6 +177,8 @@ public static class SkillPackage
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)
         {
+            // Skill name only: the package and its SKILL.md are user text and never go in the log.
+            logger?.LogWarning(ex, "Skill package of {SkillName} could not be read", name);
             return null;
         }
     }
@@ -185,7 +188,7 @@ public static class SkillPackage
     /// entry copied untouched, in the same <c>{name}/...</c> layout <see cref="Normalize"/> produces. Returns null when the
     /// zip cannot be read or has no <c>SKILL.md</c> to replace.
     /// </summary>
-    public static byte[]? ReplaceSkillMarkdown(byte[] zip, string name, string markdown)
+    public static byte[]? ReplaceSkillMarkdown(byte[] zip, string name, string markdown, ILogger? logger = null)
     {
         var target = $"{name}/{SkillFileName}";
         try
@@ -220,6 +223,8 @@ public static class SkillPackage
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)
         {
+            // Skill name only: the package and its SKILL.md are user text and never go in the log.
+            logger?.LogWarning(ex, "Skill package of {SkillName} could not be rebuilt", name);
             return null;
         }
     }

@@ -47,7 +47,7 @@ public static class FleetDigest
     /// the newest tasks win and the oldest are dropped. Blocks read oldest first.
     /// </summary>
     public static async Task<FleetDigestResult> BuildAsync(IFleetStore store, string userId, IReadOnlyList<FleetTaskRecord> finishedNewestFirst,
-        FleetOptions options, CancellationToken cancellationToken)
+        FleetOptions options, ILogger logger, CancellationToken cancellationToken)
     {
         var budget = Math.Max(1_000, options.DreamMaxDigestChars);
         var blocks = new List<string>();
@@ -56,7 +56,7 @@ public static class FleetDigest
         foreach (var task in finishedNewestFirst.Take(Math.Max(1, options.DreamMaxTasks)))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var block = Block(task, await ReadStructuralAsync(store, userId, task.Id, cancellationToken), Math.Min(MaxTaskChars, budget));
+            var block = Block(task, await ReadStructuralAsync(store, userId, task.Id, logger, cancellationToken), Math.Min(MaxTaskChars, budget));
             if (used > 0 && used + block.Length > budget)
             {
                 break;
@@ -76,7 +76,7 @@ public static class FleetDigest
     }
 
     // The log is parsed and filtered here and then goes out of scope, before the next task's log is read.
-    private static async Task<IReadOnlyList<FleetAnalysis.Event>> ReadStructuralAsync(IFleetStore store, string userId, string taskId, CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<FleetAnalysis.Event>> ReadStructuralAsync(IFleetStore store, string userId, string taskId, ILogger logger, CancellationToken cancellationToken)
     {
         try
         {
@@ -85,7 +85,8 @@ public static class FleetDigest
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // A task whose log can't be read still carries its record; the block says so.
+            // A task whose log can't be read still carries its record; the block says so. Ids only, never log lines.
+            logger.LogWarning(ex, "Fleet digest could not read the event log of task {TaskId}", taskId);
             return [];
         }
     }

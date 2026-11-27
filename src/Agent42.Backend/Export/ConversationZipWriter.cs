@@ -16,13 +16,13 @@ public static class ConversationZipWriter
 {
     public static async Task WriteConversationAsync(
         ZipArchive zip, string folder, ConversationExport export, IAttachmentStore store, string ownerKey,
-        DateTimeOffset exportedAt, ExportManifest manifest, CancellationToken ct)
+        DateTimeOffset exportedAt, ExportManifest manifest, ILogger logger, CancellationToken ct)
     {
         var attachments = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var attachment in export.Turns.SelectMany(t => t.Attachments ?? []).DistinctBy(a => a.Id))
         {
             var path = ExportFileNames.Attachment(attachment);
-            if (await TryCopyBlobAsync(zip, folder + path, store, ownerKey, attachment.Id, manifest, ct))
+            if (await TryCopyBlobAsync(zip, folder + path, store, ownerKey, attachment.Id, manifest, logger, ct))
             {
                 attachments[attachment.Id] = path;
             }
@@ -34,7 +34,7 @@ public static class ConversationZipWriter
             foreach (var version in artifact.Versions)
             {
                 var path = ExportFileNames.ArtifactVersion(artifact, version.Version);
-                if (await TryCopyBlobAsync(zip, folder + path, store, ownerKey, version.AttachmentId, manifest, ct))
+                if (await TryCopyBlobAsync(zip, folder + path, store, ownerKey, version.AttachmentId, manifest, logger, ct))
                 {
                     artifacts[ExportFiles.ArtifactKey(artifact.Id, version.Version)] = path;
                 }
@@ -58,7 +58,7 @@ public static class ConversationZipWriter
     // entry is created, so the archive stays valid without it, and one bad blob never fails a whole bulk part.
     private static async Task<bool> TryCopyBlobAsync(
         ZipArchive zip, string entryName, IAttachmentStore store, string ownerKey, string attachmentId,
-        ExportManifest manifest, CancellationToken ct)
+        ExportManifest manifest, ILogger logger, CancellationToken ct)
     {
         AttachmentContent? stored;
         try
@@ -67,6 +67,8 @@ public static class ConversationZipWriter
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Identifiers only: the attachment id, never its bytes or the conversation text.
+            logger.LogWarning(ex, "Export could not read attachment {AttachmentId}; it is listed as missing", attachmentId);
             stored = null;
         }
 

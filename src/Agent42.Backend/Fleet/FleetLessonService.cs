@@ -491,7 +491,7 @@ public sealed partial class FleetLessonService(
     private async Task<DreamProgress> DreamOverAsync(
         string userId, List<FleetTaskRecord> finished, DateTimeOffset? previousRunAt, string model, UserTelemetryContext telemetry, FleetOptions effective, CancellationToken cancellationToken)
     {
-        var digest = await FleetDigest.BuildAsync(store, userId, finished, effective, cancellationToken);
+        var digest = await FleetDigest.BuildAsync(store, userId, finished, effective, logger, cancellationToken);
         var prompts = new FleetPromptSet(await store.GetPromptsAsync(userId, cancellationToken));
         // Unlocked, like the rest of the run: the merge re-checks the stored proposals under the lock (ADR 0143).
         var lessons = await store.GetLessonsAsync(userId, cancellationToken);
