@@ -161,6 +161,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     private WebDocumentList _webDocuments = null!;
     private WebDocumentTool _webDocumentTool = null!;
     private ArtifactToolSet _artifactTools = null!;
+    private McpAppStore _mcpApps = null!;
 
     // The user's DEFAULT selectable-tools set (ADR 0021), read ONCE on activation from IUserProfileGrain —
     // null means "all selectable tools" (the null==all sentinel). It is the middle layer of the resolution
@@ -291,6 +292,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _forking = new ConversationForking(_attachments, _logger);
         _fetchableUrls = new FetchableUrlList(() => _state.State);
         _webTools = new WebTools(_webSearch, _logger, this.GetPrimaryKeyString(), _fetchableUrls);
+        _mcpApps = new McpAppStore(
+            () => _state.State.McpApps, LiveSessionCallIds, _attachments, _logger, this.GetPrimaryKeyString());
         _artifactTools = new ArtifactToolSet(
             new ArtifactList(() => _state.State), _attachments, _timeProvider, _logger, this.GetPrimaryKeyString());
         _webDocuments = new WebDocumentList(() => _state.State);
@@ -1352,7 +1355,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         // Retention (ADR 0016): stamp every message, then delete whole turns that fell outside the window
         // — continuous chats only. Before the serialize, so the pruned session is what gets written.
-        await StoreMcpAppsAsync(turn);
+        await _mcpApps.StoreAsync(turn);
         CompactToolPayloads();
         var pruned = ApplyRetention();
 
@@ -1466,7 +1469,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         value is not null ? JsonSerializer.Serialize(value) : null;
 
     public Task<IReadOnlyList<ChatTurn>> GetHistoryAsync()
-        => Task.FromResult<IReadOnlyList<ChatTurn>>(ProjectHistory().Select(p => WithMcpApps(p.Turn)).ToList());
+        => Task.FromResult<IReadOnlyList<ChatTurn>>(ProjectHistory().Select(p => _mcpApps.WithApps(p.Turn)).ToList());
 
     /// <summary>
     /// The one history projection (<see cref="GetHistoryAsync"/>, search ordinals, ADR 0046 recovery), with each

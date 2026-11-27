@@ -229,7 +229,7 @@ public sealed partial class AgentGrain
     {
         CompactToolPayloads();
         ApplyRetention();
-        ReconcileMcpApps();
+        _mcpApps.Reconcile();
 
         await WriteSessionAndIndexAsync(pruned: true);
     }
