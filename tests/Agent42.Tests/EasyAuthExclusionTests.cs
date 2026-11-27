@@ -28,7 +28,7 @@ public sealed class EasyAuthExclusionTests
     /// and would still pass every positive assertion below — which is what
     /// <see cref="WildcardEntry_DoesNotMatchANameStem"/> is for.
     /// </summary>
-    private static bool IsExcluded(IReadOnlyList<string> entries, string path) =>
+    internal static bool IsExcluded(IReadOnlyList<string> entries, string path) =>
         entries.Any(entry => entry.EndsWith("/*", StringComparison.Ordinal)
             ? path.StartsWith(entry[..^1], StringComparison.OrdinalIgnoreCase)
             : path.Equals(entry, StringComparison.OrdinalIgnoreCase));
@@ -271,7 +271,7 @@ public sealed class EasyAuthExclusionTests
         $"{what} is NOT carved out of Easy Auth by [{string.Join(", ", entries)}] — recipients get the login page.";
 
     /// <summary>Reads the literal <c>excludedPaths</c> array out of the Bicep module.</summary>
-    private static IReadOnlyList<string> ExcludedPaths()
+    internal static IReadOnlyList<string> ExcludedPaths()
     {
         var bicep = File.ReadAllText(Path.Combine(RepoRoot(), "infra", "modules", "container-app.bicep"));
         var start = bicep.IndexOf("excludedPaths: [", StringComparison.Ordinal);

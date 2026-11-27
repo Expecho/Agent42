@@ -1,0 +1,14 @@
+{
+  "name": "agent42-e2e",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end smoke layers (ADR 0151): browser vs DevHost, and the self-host compose stack",
+  "scripts": {
+    "test": "playwright test",
+    "test:devhost": "playwright test devhost",
+    "test:selfhost": "playwright test selfhost"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1"
+  }
+}
