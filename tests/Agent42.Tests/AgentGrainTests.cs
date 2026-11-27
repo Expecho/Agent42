@@ -2520,6 +2520,26 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
         Assert.Contains($"https://host{AgentGrain.MaxFetchableUrls + 9}.example.com/", state.FetchableUrls);
     }
 
+    // Plan cc-12: a fired reminder runs a prompt the MODEL authored, so it must never feed the exfiltration allowlist.
+    // The exclusion is structural (ReceiveReminder never reaches BuildUserTurnAsync); this pins it end to end.
+    [Fact]
+    public async Task ReminderRun_AddsNoFetchableUrl()
+    {
+        const string Key = "reminder-no-fetchable-url-conversation";
+        var agent = Cluster.GrainFactory.GetGrain<IAgentGrain>(Key);
+
+        await Chat(agent, FakeChatClient.ScheduleUrlReminderTrigger);
+        // The reminder really exists (a trigger that missed would make this test vacuous).
+        Assert.Contains(await agent.GetScheduledPromptsAsync(), r => r.Name == "url-reminder");
+        var before = (await SessionStateOf(Key)).FetchableUrls.ToList();
+
+        await agent.AsReference<IRemindable>().ReceiveReminder("url-reminder", default);
+
+        var state = await SessionStateOf(Key);
+        Assert.Equal(before, state.FetchableUrls);
+        Assert.DoesNotContain(state.FetchableUrls.Concat(state.SeededFetchableUrls), u => u.Contains("attacker.example"));
+    }
+
     // ---- Ephemeral / incognito chat (ADR 0034) --------------------------------------------------
     //
     // An ephemeral turn runs the model normally but never writes its session item, so the conversation

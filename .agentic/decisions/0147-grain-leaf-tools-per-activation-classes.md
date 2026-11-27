@@ -6,6 +6,7 @@ tags: [refactor, structure, agents, orleans, tools, testing, no-migration]
 supersedes: []
 extends: [0106]
 amends: [0039, 0075, 0106, 0112, 0115]
+amended_by: [0150]
 ---
 
 # Leaf tool sets move out of `AgentGrain` into classes built with `new` per activation

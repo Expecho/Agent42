@@ -17,7 +17,7 @@ namespace Agent42.Agents;
 /// dependency (the search and research slices keep their own feature-only fields, ADR 0061/0082), plus
 /// activation, the run entry points (<see cref="ChatAsync"/>, <see cref="EnqueuePromptAsync"/> and
 /// <see cref="ReceiveReminder"/>) and the persist pipeline. The feature slices live beside their feature
-/// (<c>Web/AgentGrain.WebTools.cs</c>, <c>Documents/AgentGrain.Documents.cs</c>, and so on) but all
+/// (<c>Documents/AgentGrain.Documents.cs</c>, <c>Tools/AgentGrain.BuildAgent.cs</c>, and so on) but all
 /// declare this one namespace: a partial class cannot span namespaces, which is why
 /// <c>AgentGrain.*.cs</c> is exempted from the IDE0130 folder/namespace rule in
 /// <c>.editorconfig</c>.</para>
@@ -155,6 +155,10 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     private FleetTools _fleetTools = null!;
     private FleetAnalyzerTools _fleetAnalyzerTools = null!;
 
+    // The web tools and the fetchable-URL port they write through (plan cc-12). The port reads _state.State live.
+    private FetchableUrlList _fetchableUrls = null!;
+    private WebTools _webTools = null!;
+
     // The user's DEFAULT selectable-tools set (ADR 0021), read ONCE on activation from IUserProfileGrain —
     // null means "all selectable tools" (the null==all sentinel). It is the middle layer of the resolution
     // override ?? default ?? all (see EffectiveEnabledTools): a per-conversation override or an agent snapshot
@@ -282,6 +286,8 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _search = CreateSearchProjection();
         _retention = new HistoryRetention(_timeProvider, _logger, this.GetPrimaryKeyString());
         _forking = new ConversationForking(_attachments, _logger);
+        _fetchableUrls = new FetchableUrlList(() => _state.State);
+        _webTools = new WebTools(_webSearch, _logger, this.GetPrimaryKeyString(), _fetchableUrls);
         _location = new LocationTools(_geocoder, _logger, this.GetPrimaryKeyString(), AwaitClientResultAsync);
         _pastChats = new PastChatTools(
             _chatSearchIndex, GrainFactory, _userId, ConversationIdFromGrainKey(this.GetPrimaryKeyString()),
@@ -1396,7 +1402,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             // A URL the user wrote themselves is fetchable (ADR 0011) — "summarize this link" must
             // work without searching first. This is the ONLY place user-authored text feeds the
             // allowlist; text the model read off a web page never does.
-            RememberFetchableUrlsInUserText(message);
+            _webTools.RememberFromUserText(message);
         }
 
         // The attachment still lands in TurnAttachments even when withheld, so history renders it and

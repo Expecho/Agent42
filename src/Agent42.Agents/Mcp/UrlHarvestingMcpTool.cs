@@ -19,7 +19,7 @@ namespace Agent42.Agents;
 ///
 /// <para><b>This sits OUTSIDE the truncation wrapper</b> (<c>BuildAgent</c> wraps what the provider already
 /// wrapped), so the text handed to <paramref name="harvest"/> is the already-truncated result — see
-/// <c>AgentGrain.RememberSeededUrlsFromToolResult</c>, which drops a URL cut off at that boundary rather
+/// <c>WebTools.RememberSeededUrlsFromToolResult</c>, which drops a URL cut off at that boundary rather
 /// than seeding its prefix.</para>
 /// </summary>
 /// <param name="inner">The already-truncation-wrapped MCP tool.</param>

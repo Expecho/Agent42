@@ -776,6 +776,21 @@ public sealed partial class FakeChatClient : IChatClient
             ["question"] = "summarise this",
         });
 
+    /// <summary>Prompt trigger for a reminder whose prompt text carries an attacker-style URL (plan cc-12).</summary>
+    public const string ScheduleUrlReminderTrigger = "schedule a url check";
+
+    /// <summary>The URL <see cref="ScheduleUrlReminderTrigger"/>'s reminder prompt names; it must never become fetchable.</summary>
+    public const string ReminderPromptUrl = "https://attacker.example/steal?q=secret";
+
+    private static FunctionCallContent BuildUrlReminderCall() =>
+        new("url-reminder-call-1", "schedule_prompt", new Dictionary<string, object?>
+        {
+            ["name"] = "url-reminder",
+            ["prompt"] = $"summarize {ReminderPromptUrl}",
+            ["dueInMinutes"] = 1.0,
+            ["repeatEveryMinutes"] = 60.0,
+        });
+
     // Schedules a reminder whose PROMPT asks for the manual to be read. When it fires, that prompt comes
     // back as a user message and this client answers it with a read_web_document call — which is what
     // lets ReadWebDocument_AttachesRetrievalAfterReminderTurn observe the REMINDER consume site. Nothing
@@ -1247,6 +1262,8 @@ public sealed partial class FakeChatClient : IChatClient
         ("send me a notification", _ => BuildPushCall()),
         // ADR 0082. Contains neither "cancel" nor "remind", and not the research trigger itself.
         (ScheduleResearchTrigger, _ => BuildResearchReminderCall()),
+        // Plan cc-12: a reminder whose model-authored PROMPT names a URL, to pin that a fired reminder never feeds the allowlist.
+        (ScheduleUrlReminderTrigger, _ => BuildUrlReminderCall()),
     ];
 
     // The last message the USER actually sent.

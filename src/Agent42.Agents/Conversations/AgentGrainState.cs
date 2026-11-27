@@ -112,7 +112,7 @@ public sealed class AgentGrainState
     ///
     /// <para><b>This list still has exactly the two feeders named above.</b> ADR 0067 added a third
     /// source of fetchable URLs — a URL-seeding MCP server's tool result — and deliberately gave it its
-    /// OWN list (<see cref="SeededFetchableUrls"/>), which <c>IsFetchableUrl</c> consults separately.
+    /// OWN list (<see cref="SeededFetchableUrls"/>), which <c>FetchableUrlList.IsFetchable</c> consults separately.
     /// Nothing seeds into here, and nothing should: these URLs carry the stronger <i>verbatim</i>
     /// provenance the paragraph above describes, and a link-heavy tool result harvested into a
     /// 50-entry list would evict every URL the user typed.</para>
@@ -197,7 +197,7 @@ public sealed class AgentGrainState
 
     /// <summary>
     /// The normalized URLs this conversation may fetch <b>because they arrived in the tool result of a
-    /// remote MCP server the user marked as URL-seeding</b> (ADR 0067). <c>IsFetchableUrl</c> consults this
+    /// remote MCP server the user marked as URL-seeding</b> (ADR 0067). <c>FetchableUrlList.IsFetchable</c> consults this
     /// list and <see cref="FetchableUrls"/>, so a seeded URL is readable by
     /// <c>read_web_document</c>.
     ///

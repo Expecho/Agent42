@@ -97,7 +97,7 @@ any style key added there reformats the whole repo on the next run.
 `src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs`,
 `src/Agent42.Agents/Documents/AgentGrain.Documents.cs`,
 `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs`,
-`src/Agent42.Agents/Web/AgentGrain.WebTools.cs`,
+`src/Agent42.Agents/Web/WebTools.cs` (moved out of the grain by plan cc-12),
 `src/Agent42.Agents/Location/LocationTools.cs` (was `AgentGrain.LocationTool.cs`, moved out of the grain by plan cc-09),
 `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs`,
 `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`,

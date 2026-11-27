@@ -73,7 +73,7 @@ which is a prompt-injection *exfiltration* control entirely independent of SSRF 
 ### The allowlist stays, and it is the thing most likely to be broken by accident
 Only the **root** URL is checked against `FetchableUrls`, exactly as before —
 `FetchWebPage_RefusesAttackerUrlWhoseHostItsOwnSearchSurfaced` must pass **unmodified**, and
-`RememberFetchableUrlsInUserText` must still never be called on the reminder path. The allowlist is not
+`WebTools.RememberFromUserText` must still never be called on the reminder path. The allowlist is not
 an SSRF control and does not go away with the guard.
 
 ### The followed-link allowlist exemption is an accepted residual risk, not a non-risk

@@ -136,7 +136,6 @@ public sealed class ProjectLayoutTests
         "Tools/AgentGrain.BuildAgent.cs",
         "Documents/AgentGrain.Documents.cs",
         "Documents/AgentGrain.WebDocumentTool.cs",
-        "Web/AgentGrain.WebTools.cs",
         "Scheduling/AgentGrain.Scheduling.cs",
         "ImageGeneration/AgentGrain.ImageTurn.cs",
         "Attachments/AgentGrain.Attachments.cs",
@@ -995,6 +994,69 @@ public sealed class ProjectLayoutTests
 
         Assert.True(dir is not null, "Could not locate repo root (Agent42.slnx) from " + AppContext.BaseDirectory);
         return dir!.FullName;
+    }
+
+    // ---- The fetchable-URL allowlist keeps its feeders (plan cc-12; ADR 0011/0067) ----
+    //
+    // WebTools is a public class, so any code in the assembly could call it. The allowlist is the exfiltration
+    // control, so the call sites ARE the control: user text may feed it from exactly one place, and the seeded list
+    // only through the URL-harvesting MCP wrapper. A second caller would be a way to whitelist model-authored text.
+
+    private static IEnumerable<string> CodeLinesCalling(string member)
+    {
+        foreach (var project in new[] { "Agent42.Agents", "Agent42.Backend" })
+        {
+            foreach (var file in SourceFiles(project))
+            {
+                foreach (var line in File.ReadAllLines(file))
+                {
+                    var trimmed = line.TrimStart();
+                    if (!trimmed.StartsWith("//", StringComparison.Ordinal) && line.Contains(member, StringComparison.Ordinal))
+                    {
+                        yield return Path.GetFileName(file) + ": " + trimmed;
+                    }
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void RememberFromUserText_HasExactlyOneCaller_BuildUserTurn()
+    {
+        var calls = CodeLinesCalling(".RememberFromUserText(").ToList();
+
+        var only = Assert.Single(calls);
+        Assert.StartsWith("AgentGrain.cs:", only);
+    }
+
+    [Fact]
+    public void RememberSeededUrlsFromToolResult_IsReachedOnlyThroughTheHarvestingWrapper()
+    {
+        var calls = CodeLinesCalling("RememberSeededUrlsFromToolResult").Where(l => !l.StartsWith("WebTools.cs:", StringComparison.Ordinal)).ToList();
+
+        var only = Assert.Single(calls);
+        Assert.StartsWith("AgentGrain.BuildAgent.cs:", only);
+        Assert.Contains("new UrlHarvestingMcpTool(", only);
+    }
+
+    [Fact]
+    public void WebToolsAndTheFetchableUrlPort_AreBuiltOnlyInOnActivate()
+    {
+        var builds = CodeLinesCalling("new WebTools(").Concat(CodeLinesCalling("new FetchableUrlList(")).ToList();
+
+        Assert.Equal(2, builds.Count);
+        Assert.All(builds, l => Assert.StartsWith("AgentGrain.cs:", l));
+    }
+
+    [Fact]
+    public void TheAllowlistLists_AreWrittenOnlyByTheFetchableUrlPort()
+    {
+        var writers = CodeLinesCalling("FetchableUrls.Add(")
+            .Concat(CodeLinesCalling("FetchableUrls.Insert("))
+            .Where(l => !l.StartsWith("FetchableUrlList.cs:", StringComparison.Ordinal))
+            .ToList();
+
+        Assert.Empty(writers);
     }
 
     // ---- Tests wait through TestWait, never through a private poll loop (clean-code programme, plan cc-02) ----
