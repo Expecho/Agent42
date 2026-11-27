@@ -9,6 +9,13 @@ public static partial class AgentApi
 {
     private static void MapModelEndpoints(IEndpointRouteBuilder app)
     {
+        MapProviderGroup(app);
+        MapDefaultModelGroup(app);
+    }
+
+    // The catalogue and the user's provider overlay CRUD.
+    private static void MapProviderGroup(IEndpointRouteBuilder app)
+    {
         // The models available to the SIGNED-IN USER: their effective (baseline ⊕ overlay) provider set
         // (ADR 0018), so a provider they added shows up here without an app restart.
         app.MapGet("/api/models", GetModelsAsync);
@@ -66,6 +73,11 @@ public static partial class AgentApi
             return Results.NoContent();
         });
 
+    }
+
+    // The four per-user defaults (chat, embedding, speech, transcription), each on its own literal path.
+    private static void MapDefaultModelGroup(IEndpointRouteBuilder app)
+    {
         // Sets (or clears, with a blank body) the model new chats start on — the overlay default the
         // resolver already prefers (ADR 0018). The path is NOT /api/providers/default: a provider key is
         // USER-chosen, so a user may legitimately key a provider `default`, and ASP.NET Core routing gives
