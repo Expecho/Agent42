@@ -104,3 +104,27 @@ registration tests described above (not by explanation); cognitive_complexity_ma
 Reordering the middleware; changing what is registered; `FleetLessonService`/`ConfigHealth`/endpoint maps (plan 07).
 
 ## Review
+
+Critic (fresh context): no blocking findings. One stale gotcha claim (`Program.cs` "no test will catch this") and one stale
+source comment, both fixed in this MR. Other points (ADRs 0014/0031/0033 name `ChatClientFactory.cs`) are historical, left.
+
+## Divergences from the plan
+
+- **`ChatClientFactory` split uses partial classes, not `*ClientBuilder` types.** `MultiProviderChatClientFactory` and the
+  nested `Provider` are `partial`; `Foundry` (+ `FoundryEmbeddingsEndpoint`, `ApiKeyHeaderPolicy`), `OpenAICompatible` and
+  `Anthropic` each live in `ChatClientFactory.<Kind>.cs`. Every call site (`Provider.Foundry(...)`) is unchanged. `Build` stays in
+  `ChatClientFactory.cs`, so `McpToolImageTests.ToolImageChatClient_SitsBelowOpenTelemetry` needed no re-pointing. GitHubCopilot and
+  DecisionModel (one-liners) stay in the core file. `#pragma` regions stay around the same statements.
+- **`AddModelProviders` returns the `ModelProviderSetup`** (decision for step 4): Program.cs keeps it for the skipped-provider log.
+  It also owns the `ArmClient` registration and the Auto router registration.
+- **Document-client pins are behavioural, not source slices.** `WebRegistrationTests` resolves the handler chain: no resilience
+  handler (with a control client proving the probe sees one), per-client timeouts, loopback refused with `BlockedAddressException`,
+  proxy handler flags. The two `ProgramCs_*` tests in `WebDocumentToolTests` were removed in favour of it.
+- `ProjectLayoutTests.Hosts_CallAddAgent42Silo` gained a per-host push-sender token (`AddWebPush(` for Backend).
+- Gotchas evidence paths re-pointed (path-only) and the "resilience assembled in Program.cs" claim reworded.
+
+## Results
+
+`Program.cs` 550 -> 329 lines; `ChatClientFactory.cs` 593 -> 394 (+ 231 in three kind files). Full suite: 4212 pass excluding
+`Live*`; 5 `Live*` tests fail on credentials (HTTP 401 invalid subscription key), unrelated to this change. New-code coverage 94.2%
+(194/206, `check-new-code-coverage.mjs main`). `dotnet format --verify-no-changes` clean; `check-doc-paths` passes.

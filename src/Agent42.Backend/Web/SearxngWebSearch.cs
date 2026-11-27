@@ -10,7 +10,7 @@ namespace Agent42.Backend;
 /// and is not attributable to a user account. It is <b>not</b> private: SearXNG is a <i>meta</i>search
 /// engine and forwards the query to upstream engines (Google, DuckDuckGo, Bing — ADR 0060).
 ///
-/// The <see cref="HttpClient"/> is a named client with <b>explicit</b> timeouts (see Program.cs):
+/// The <see cref="HttpClient"/> is a named client with <b>explicit</b> timeouts (see WebRegistration):
 /// <c>AgentGrain</c> is non-reentrant, so a slow search serializes the conversation's turn and delays
 /// the first token — the standard resilience handler's generous defaults are the wrong budget here.
 /// </summary>
