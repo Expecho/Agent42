@@ -476,7 +476,10 @@
   async function answer(text) {
     if (!S.selectedTask) return;
     const r = await api("POST", `/api/fleet/tasks/${encodeURIComponent(S.selectedTask)}/answer`, { answer: text, questionId: S.prompt?.id ?? null });
-    if (r.ok) { S.prompt = null; renderPrompt(); }
+    // 409/404: nothing is waiting for an answer any more (the task ended or the replica restarted, so the replayed
+    // question is stale). Drop the banner instead of leaving buttons that silently do nothing.
+    if (r.ok || r.status === 409 || r.status === 404) { S.prompt = null; renderPrompt(); $("#promptError").textContent = ""; return; }
+    $("#promptError").textContent = r.data?.error || `The answer could not be sent (HTTP ${r.status}).`;
   }
 
   // ---------- composer ----------
