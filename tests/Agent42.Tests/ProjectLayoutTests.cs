@@ -143,7 +143,7 @@ public sealed class ProjectLayoutTests
         "Memory/AgentGrain.Memory.cs",
         "Search/AgentGrain.Search.cs",
         "Research/AgentGrain.Research.cs",
-        "Artifacts/AgentGrain.ArtifactTools.cs",
+        "Artifacts/AgentGrain.ArtifactCompaction.cs",
         "Copilot/AgentGrain.Copilot.cs",
         "ClientTools/AgentGrain.ClientTools.cs",
         "SharedState/AgentGrain.SharedState.cs",

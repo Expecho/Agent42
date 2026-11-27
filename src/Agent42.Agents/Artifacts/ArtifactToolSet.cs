@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
-using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
@@ -11,32 +10,32 @@ namespace Agent42.Agents;
 /// The artifact tools: <c>create_artifact</c>, <c>update_artifact</c> and <c>read_artifact</c>. The model writes a
 /// standalone HTML page, an SVG, a markdown document or a code file, and every update is a new version. The
 /// bytes go to blob storage as <c>application/octet-stream</c> and the metadata to
-/// <see cref="AgentGrainState.Artifacts"/>.
+/// <see cref="AgentGrainState.Artifacts"/>, through the <see cref="ArtifactList"/> port.
 ///
-/// <para><b>The tools never call <c>WriteStateAsync</c>.</b> The end-of-turn write persists the new record, the
+/// <para><b>The tools never persist state.</b> The end-of-turn write persists the new record, the
 /// push tool's precedent. The blob is written first, so a crash in between orphans a blob (harmless) and never
 /// leaves a ref to nothing.</para>
 ///
 /// <para><b>The tool-call ARGUMENTS are as big as the artifact</b>, and the session keeps them (ADR 0004's 2 MB
-/// item). <see cref="CompactToolPayloads"/> stubs them after the turn; see the artifact entry in gotchas.md.</para>
+/// item). <c>AgentGrain.CompactToolPayloads</c> stubs them after the turn; see the artifact entry in gotchas.md. The
+/// compaction half stays in the grain (ADR 0150) and parses the exact JSON shape <c>ArtifactResult</c> writes.</para>
+///
+/// <para>Built per grain activation with <c>new</c> (ADR 0147, amended by plan cc-12 / ADR 0150); public only because
+/// this repo has no <c>InternalsVisibleTo</c>. Holds no grain state.</para>
 /// </summary>
-public sealed partial class AgentGrain
+public sealed class ArtifactToolSet(
+    ArtifactList artifacts, IAttachmentStore attachments, TimeProvider timeProvider, ILogger logger, string grainKey)
 {
     private const string ArtifactMediaType = "application/octet-stream";
-
-    // The three tool names, shared with compaction and the history projection.
-    internal const string CreateArtifactTool = "create_artifact";
-    internal const string UpdateArtifactTool = "update_artifact";
-    private const string ReadArtifactTool = "read_artifact";
 
     // The rules the model obeys are these descriptions (ADR 0067's lesson), so the policy is all here: when an
     // artifact is worth it, prefer update, the sandbox, and read before editing an older one. No promise of a
     // pane: a stored agent run through /api/agent-run has the tools too, and nobody is looking at a UI.
-    private IEnumerable<AITool> ArtifactTools() =>
+    public IEnumerable<AITool> Tools() =>
     [
         AIFunctionFactory.Create(
             CreateArtifactAsync,
-            name: CreateArtifactTool,
+            name: AgentGrain.CreateArtifactTool,
             description: "Create an artifact: a standalone piece of output the user may open, copy and download "
                 + "separately from the chat (in the Agent42 UI it opens in a side pane). Use it for SUBSTANTIAL, "
                 + "self-contained output: an interactive HTML page or small app, a diagram or illustration as SVG, "
@@ -54,21 +53,17 @@ public sealed partial class AgentGrain
                 + "version; do not repeat the content in your reply."),
         AIFunctionFactory.Create(
             UpdateArtifactAsync,
-            name: UpdateArtifactTool,
+            name: AgentGrain.UpdateArtifactTool,
             description: "Replace the content of an existing artifact with a new FULL version (not a diff); the "
                 + "previous versions are kept. Use this whenever the user asks to change an artifact. If the "
                 + "artifact was created or last changed in an EARLIER turn, call read_artifact first, because its "
                 + "content is no longer in your context. Returns the new version number."),
         AIFunctionFactory.Create(
             ReadArtifactAsync,
-            name: ReadArtifactTool,
+            name: AgentGrain.ReadArtifactTool,
             description: "Read the content of one version of an artifact in this conversation (the latest when no "
                 + "version is given). Call it before editing an artifact from an earlier turn."),
     ];
-
-    public Task<IReadOnlyList<ArtifactRecord>> GetArtifactsAsync()
-        => Task.FromResult<IReadOnlyList<ArtifactRecord>>(
-            _state.State.Artifacts.Values.OrderBy(a => a.CreatedAt).ToList());
 
     private async Task<string> CreateArtifactAsync(
         [Description("One of: html (a full page, may include inline script), svg, markdown, code.")] string kind,
@@ -96,13 +91,13 @@ public sealed partial class AgentGrain
             return contentProblem;
         }
 
-        if (_state.State.Artifacts.Count >= ArtifactLimits.MaxArtifactsPerConversation)
+        if (artifacts.Count >= ArtifactLimits.MaxArtifactsPerConversation)
         {
             return $"This conversation already has {ArtifactLimits.MaxArtifactsPerConversation} artifacts, the "
                 + "limit. Update an existing one instead, or suggest the user continue in a new chat.";
         }
 
-        var now = _timeProvider.GetUtcNow();
+        var now = timeProvider.GetUtcNow();
         var record = new ArtifactRecord
         {
             Id = "art_" + Guid.NewGuid().ToString("N")[..12],
@@ -113,7 +108,7 @@ public sealed partial class AgentGrain
         };
 
         await AppendArtifactVersionAsync(record, content, cancellationToken);
-        _state.State.Artifacts[record.Id] = record;
+        artifacts.Add(record);
         return ArtifactResult(record);
     }
 
@@ -128,7 +123,7 @@ public sealed partial class AgentGrain
             return "I cannot change artifacts in an incognito chat. Put the content in your reply instead.";
         }
 
-        if (!_state.State.Artifacts.TryGetValue(artifactId ?? "", out var record))
+        if (!artifacts.TryGet(artifactId, out var record))
         {
             return UnknownArtifact(artifactId);
         }
@@ -158,7 +153,7 @@ public sealed partial class AgentGrain
         [Description("The version number; omit for the latest.")] int? version = null,
         CancellationToken cancellationToken = default)
     {
-        if (!_state.State.Artifacts.TryGetValue(artifactId ?? "", out var record))
+        if (!artifacts.TryGet(artifactId, out var record))
         {
             return UnknownArtifact(artifactId);
         }
@@ -169,7 +164,7 @@ public sealed partial class AgentGrain
             return $"Artifact {record.Id} has versions {VersionList(record)}; there is no version {version}.";
         }
 
-        var stored = await _attachments.OpenReadAsync(this.GetPrimaryKeyString(), entry.AttachmentId, cancellationToken);
+        var stored = await attachments.OpenReadAsync(grainKey, entry.AttachmentId, cancellationToken);
         if (stored is null)
         {
             return $"The content of artifact {record.Id} version {entry.Version} is missing from storage.";
@@ -190,14 +185,14 @@ public sealed partial class AgentGrain
     {
         var version = (record.Versions.Count > 0 ? record.Versions[^1].Version : 0) + 1;
         var bytes = Encoding.UTF8.GetBytes(content);
-        var saved = await _attachments.SaveAsync(
-            this.GetPrimaryKeyString(), $"{record.Id}-v{version}.bin", ArtifactMediaType, bytes, cancellationToken);
-        record.Versions.Add(new ArtifactVersionRef(version, saved.Id, bytes.Length, _timeProvider.GetUtcNow()));
+        var saved = await attachments.SaveAsync(
+            grainKey, $"{record.Id}-v{version}.bin", ArtifactMediaType, bytes, cancellationToken);
+        record.Versions.Add(new ArtifactVersionRef(version, saved.Id, bytes.Length, timeProvider.GetUtcNow()));
 
         // Never log the title or the content: model-authored text about whatever the user is doing (ADR 0010).
-        _logger.LogInformation(
+        logger.LogInformation(
             "Agent grain {GrainKey} stored artifact {ArtifactId} v{Version} ({Kind}, {Bytes} bytes)",
-            this.GetPrimaryKeyString(), record.Id, version, record.Kind, bytes.Length);
+            grainKey, record.Id, version, record.Kind, bytes.Length);
     }
 
     private static string? ValidateNewArtifact(string? kind, string? language)
@@ -235,10 +230,10 @@ public sealed partial class AgentGrain
     }
 
     // The version numbers an artifact holds. Not "1 to N": a truncation or a fork can leave a gap (ADR 0092).
-    private static string VersionList(ArtifactRecord record)
+    internal static string VersionList(ArtifactRecord record)
         => string.Join(", ", record.Versions.Select(v => v.Version));
 
-    private static string UnknownArtifact(string? artifactId)
+    internal static string UnknownArtifact(string? artifactId)
         => $"There is no artifact '{artifactId}' in this conversation. Use an artifactId that create_artifact returned.";
 
     private static string CleanArtifactTitle(string? title)
@@ -257,155 +252,6 @@ public sealed partial class AgentGrain
     private static string ArtifactResult(ArtifactRecord record)
         => JsonSerializer.Serialize(
             new ArtifactInfo(record.Id, record.Versions[^1].Version, record.Kind, record.Title), JsonSerializerOptions.Web);
-
-    /// <summary>
-    /// Stubs bulky tool payloads out of the session before it is serialized. Two families: the artifact source —
-    /// every <c>create_artifact</c> / <c>update_artifact</c> call's <c>content</c> argument, and every
-    /// <c>read_artifact</c> result (ADR 0084) — and every successful <c>read_document</c> part (ADR 0098). Within the
-    /// turn the model saw the full text; on a later turn it calls the read tool again. Without this, ten
-    /// revisions of a 60 KB app leave 600 KB of dead text in the 2 MB session item (ADR 0004), re-sent every turn.
-    ///
-    /// <para>Runs at the five post-turn persist sites, beside <c>ApplyRetention</c>, and mutates the
-    /// <c>TryGetInMemoryChatHistory</c> list in place the way retention does. Measured on Agent Framework 1.22
-    /// (spike in the plan): a replaced <see cref="FunctionCallContent"/> survives serialize → JSON → deserialize,
-    /// and the next turn still sends the call paired with its result. A call is REPLACED with a copy rather than
-    /// having its argument dictionary edited, because the framework may share that dictionary with the live
-    /// stream. Idempotent: an already-stubbed call or result is left alone.</para>
-    /// </summary>
-    private void CompactToolPayloads()
-    {
-        if (!_session.TryGetInMemoryChatHistory(out List<ChatMessage>? messages) || messages is null)
-        {
-            return;
-        }
-
-        var results = new Dictionary<string, FunctionResultContent>(StringComparer.Ordinal);
-        foreach (var result in messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>())
-        {
-            results[result.CallId] = result;
-        }
-
-        foreach (var message in messages)
-        {
-            for (var i = 0; i < message.Contents.Count; i++)
-            {
-                if (message.Contents[i] is FunctionCallContent call)
-                {
-                    message.Contents[i] = CompactToolCall(call, results.GetValueOrDefault(call.CallId));
-                }
-            }
-        }
-    }
-
-    // One call, compacted, or the same instance when there is nothing to compact. The result is joined by CallId,
-    // never by position: a result arrives on a later message than its call (gotchas.md).
-    private static AIContent CompactToolCall(FunctionCallContent call, FunctionResultContent? result)
-    {
-        if (call.Name == ToolCatalog.ReadDocument)
-        {
-            CompactReadDocumentResult(call, result);
-            return call;
-        }
-
-        if (call.Name is PastChatLimits.SearchToolName or PastChatLimits.ReadToolName)
-        {
-            CompactPastChatResult(call, result);
-            return call;
-        }
-
-        if (call.Name == ReadArtifactTool)
-        {
-            if (result is not null && ParseArtifactResult(result.Result) is { } read)
-            {
-                result.Result = ArtifactLimits.Stub(read.ArtifactId, read.Version);
-            }
-
-            return call;
-        }
-
-        if (call.Name is not (CreateArtifactTool or UpdateArtifactTool)
-            || call.Arguments?.TryGetValue("content", out var content) != true
-            || ToolText(content) is not { } text
-            || IsCompacted(text))
-        {
-            return call;
-        }
-
-        // A refused call stored nothing, so there is no artifact to point at. Its content is dropped all the same.
-        var stub = ParseArtifactResult(result?.Result) is { } stored
-            ? ArtifactLimits.Stub(stored.ArtifactId, stored.Version)
-            : RefusedContentStub;
-        var arguments = new Dictionary<string, object?>(call.Arguments, StringComparer.Ordinal) { ["content"] = stub };
-        return new FunctionCallContent(call.CallId, call.Name, arguments)
-        {
-            AdditionalProperties = call.AdditionalProperties,
-            InformationalOnly = call.InformationalOnly,
-        };
-    }
-
-    private const string RefusedContentStub = "[content omitted: this call was refused and nothing was stored]";
-
-    // Exactly the two stubs compaction writes, never "starts with [": a JSON-array code artifact or a markdown
-    // document opening with [TOC] is real content and must be compacted like any other.
-    private static bool IsCompacted(string text)
-        => text.StartsWith(ArtifactLimits.StubPrefix, StringComparison.Ordinal)
-            || text.Equals(RefusedContentStub, StringComparison.Ordinal);
-
-    /// <summary>
-    /// The id and version in an artifact tool's JSON result, or null for a refusal (plain text) or a stub. Shared by
-    /// compaction and the history projection, which therefore agree on what counts as a stored artifact.
-    /// </summary>
-    internal static ArtifactInfo? ParseArtifactResult(object? result)
-    {
-        var text = ToolText(result);
-        if (text is null || !text.StartsWith('{'))
-        {
-            return null;
-        }
-
-        try
-        {
-            var info = JsonSerializer.Deserialize<ArtifactInfo>(text, JsonSerializerOptions.Web);
-            return info is { ArtifactId.Length: > 0, Version: > 0 } ? info : null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// The artifact cards a turn shows, projected from its harvested tool calls (and so joined to results by
-    /// <c>CallId</c>), or null when it created or updated none. A refused call carries a plain-text result and
-    /// projects nothing. Projected, never stored: cards can still vanish with their tool messages (a chain open at
-    /// a user turn, <c>StripToolHistory</c>, retention), which is why the pane also lists the conversation's
-    /// artifacts from state.
-    /// </summary>
-    private static List<ArtifactInfo>? ArtifactsFromToolCalls(IReadOnlyList<ChatToolCall> calls)
-    {
-        List<ArtifactInfo>? cards = null;
-        foreach (var call in calls)
-        {
-            if (call.ToolName is CreateArtifactTool or UpdateArtifactTool
-                && call.ToolResult is { } serialized
-                && ParseArtifactResult(JsonSerializer.Deserialize<JsonElement>(serialized)) is { } info)
-            {
-                (cards ??= []).Add(info);
-            }
-        }
-
-        return cards;
-    }
-
-    // A tool value as text: the string a tool returned in memory, or the JSON string element it becomes once the
-    // session has been through a serialize round-trip.
-    private static string? ToolText(object? value) => value switch
-    {
-        string s => s,
-        JsonElement { ValueKind: JsonValueKind.String } e => e.GetString(),
-        JsonElement e => e.GetRawText(),
-        _ => null,
-    };
 
     private sealed record ArtifactReadResult(
         string ArtifactId, int Version, string Kind, string Title, string? Language, string Content);

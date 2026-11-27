@@ -107,7 +107,7 @@ any style key added there reformats the whole repo on the next run.
 `src/Agent42.Agents/Memory/AgentGrain.Memory.cs` (ADR 0056),
 `src/Agent42.Agents/Search/AgentGrain.Search.cs` (ADR 0061),
 `src/Agent42.Agents/Research/AgentGrain.Research.cs` (ADR 0082),
-`src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs` (ADR 0084) and
+`src/Agent42.Agents/Artifacts/AgentGrain.ArtifactCompaction.cs` (ADR 0084; the tools moved to `ArtifactToolSet.cs` by plan cc-12) and
 `src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs` (ADR 0085).
 
 *(Ten at the time of this ADR. Same in-place-correction rule as the folder list above;

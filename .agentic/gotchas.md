@@ -591,7 +591,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs` (`_copilotRuns`, `OpenCopilotRun`),
   `src/Agent42.Agents/Copilot/SchedulerBoundAIFunction.cs`, `src/Agent42.Agents/Copilot/ChatClientCopilotAgentFactory.cs`,
   `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs`, `src/Agent42.Agents/Push/PushTools.cs`,
-  `src/Agent42.Agents/Documents/WebDocumentTool.cs`, `src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs`,
+  `src/Agent42.Agents/Documents/WebDocumentTool.cs`, `src/Agent42.Agents/Artifacts/ArtifactToolSet.cs`,
   `src/Agent42.Agents/SharedState/AgentGrain.SharedState.cs`, `src/Agent42.Agents/Memory/AgentGrain.Memory.cs`,
   `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`, `src/Agent42.Backend/Conversations/ChatContracts.cs`
   (`ChatRequest.Ephemeral`), `src/Agent42.Backend/wwwroot/js/attachments.js` (the incognito gate in `handleFiles`),
@@ -3949,7 +3949,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Test-harness trap:** a fake that puts the arguments in the USER prompt, or echoes results into its reply,
   persists the very bytes the test measures. `FakeChatClient.CallToolPrompt` keeps arguments in a side table, and
   `ScriptedResultEcho` is capped for that reason (head 2000 + tail 500 characters).
-- **Evidence:** `src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs` (`CompactToolPayloads`),
+- **Evidence:** `src/Agent42.Agents/Artifacts/AgentGrain.ArtifactCompaction.cs` (`CompactToolPayloads`),
   `src/Agent42.Agents/Documents/AgentGrain.ReadDocumentTool.cs` (`CompactReadDocumentResult`; the tool itself is `src/Agent42.Agents/Documents/ReadDocumentTool.cs`, ADR 0148),
   `src/Agent42.Agents/Conversations/AgentGrain.cs` (two persist sites), `src/Agent42.Agents/Conversations/AgentGrain.EditFork.cs` (two),
   `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`, `tests/Agent42.Tests/ArtifactToolTests.cs`
@@ -3993,7 +3993,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   visitor too). Any new feature storing such bytes through `IAttachmentStore` must save `application/octet-stream`.
 - **Enforced by:** `ArtifactToolTests.ArtifactTools_StoreOctetStream` (`tests/Agent42.Tests/ArtifactToolTests.cs`),
   `ArtifactsApiTests.AttachmentProxies_SendNoSniff` (`tests/Agent42.Tests/ArtifactsApiTests.cs`)
-- **Evidence:** `src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs` (`ArtifactMediaType`),
+- **Evidence:** `src/Agent42.Agents/Artifacts/ArtifactToolSet.cs` (`ArtifactMediaType`),
   `src/Agent42.Backend/Attachments/AgentApi.Attachments.cs`, `src/Agent42.Backend/Sharing/AgentApi.Sharing.cs`,
   `tests/Agent42.Tests/ArtifactToolTests.cs` (`ArtifactTools_StoreOctetStream`),
   `tests/Agent42.Tests/ArtifactsApiTests.cs` (`AttachmentProxies_SendNoSniff`)
