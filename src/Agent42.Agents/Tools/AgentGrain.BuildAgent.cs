@@ -63,6 +63,55 @@ public sealed partial class AgentGrain
 
         var tools = SelectableTools(capabilities, enabled, hostedTools: capabilities.SupportsHostedTools);
 
+        var researchTodos = ResearchTodosFor(capabilities);
+        var contextProviders = BuildContextProviders(capabilities, enabled, researchTodos);
+
+        // Persona: an agent chat drives Name/Instructions from the snapshot pinned in
+        // state at bind time; a normal chat falls back to the default Agent 42 persona.
+        // Old Cosmos state has null persona fields, so existing chats fall back too.
+        var agent = WithResearchLoop(new ChatClientAgent(
+            WithResearchBudget(_chatClientFactory.GetClient(modelId), researchTodos),
+            new ChatClientAgentOptions
+            {
+                Name = _state.State.AgentName ?? "Agent42",
+                ChatOptions = new ChatOptions
+                {
+                    Instructions = WithDocumentAwareness(WithRenderingHints(_state.State.SystemPrompt ?? Instructions)),
+                    // A model that can't do function tools at all (ADR 0013) gets NO schema — including
+                    // the hosted ones — even if it somehow reported SupportsHostedTools.
+                    Tools = capabilities.SupportsTools ? tools : [],
+                    // ADR 0104: the hashed per-conversation prompt-cache key. The Backend's PromptCacheKeyChatClient
+                    // strips it on every call and sends it only to Azure OpenAI.
+                    AdditionalProperties = new() { [PromptCacheKey.PropertyName] = PromptCacheKey.For(this.GetPrimaryKeyString()) },
+                },
+                // Built above: skills (a tool, so already dropped on a no-tools model), document RAG
+                // (ADR 0008, per-conversation) and long-term memory (ADR 0056, selectable since ADR 0057 —
+                // gated by the selection but NOT by capability). The reasoning that used to live here is
+                // with the list, so there is one explanation rather than two.
+                AIContextProviders = contextProviders,
+                // The provider injects retrieval as a ChatRole.User message tagged
+                // AgentRequestMessageSourceType.AIContextProvider. Left in the default history store it
+                // would be persisted into the serialized session — and it carries an attribution struct
+                // the default serializer can't handle, so SerializeSessionAsync would throw every turn
+                // (Step 1 spike). Excluding AIContextProvider (and ChatHistory) messages from storage
+                // keeps the session serializable and small (ADR 0004); retrieval still reaches the model.
+                ChatHistoryProvider = new InMemoryChatHistoryProvider(new InMemoryChatHistoryProviderOptions
+                {
+                    StorageInputRequestMessageFilter = ExcludeInjectedContextMessages,
+                    // The response-side twin (ADR 0071): a reasoning model's "thinking" is streamed to the
+                    // client and then discarded, never stored. Without this the framework persists it —
+                    // measured, on both the streaming and the RunAsync path.
+                    StorageInputResponseMessageFilter = StripReasoningFromStorage,
+                }),
+            }), modelId, researchTodos);
+        return new AgentComposition(agent, researchTodos, CopilotChat: false, CopilotUnavailable: null);
+    }
+
+    // The context providers of the ChatClientAgent, in order: skills, document RAG, memory, research todos, shared
+    // state, MCP App context. Reads grain state; writes none (ADR 0106).
+    private List<AIContextProvider> BuildContextProviders(
+        ModelCapabilities capabilities, HashSet<string> enabled, TodoProvider? researchTodos)
+    {
         // Agent Skills: markdown skills read from directory paths — the ones shipped in the image
         // (SkillCatalog) MERGED with the ones this user uploaded (ADR 0049, _userSkills, resolved on
         // activation). The provider advertises each skill's name + description in the system prompt and
@@ -139,7 +188,6 @@ public sealed partial class AgentGrain
         // The research loop (ADR 0082): its todo provider for a research-kind chat on a tools-capable model, and
         // null otherwise. The two With* calls below wrap the client and the agent the same way. Plain
         // calls on purpose — S3776 charges branches, not calls, and this method has little headroom.
-        var researchTodos = ResearchTodosFor(capabilities);
         AddResearchProviders(contextProviders, researchTodos);
 
         // Shared state (ADR 0089): shows the model the conversation's state each run, when the selection has it.
@@ -148,45 +196,7 @@ public sealed partial class AgentGrain
         // What open MCP App views told the model (ADR 0133): per-run, labeled untrusted, a trailing message.
         contextProviders.Add(new AppContextProvider());
 
-        // Persona: an agent chat drives Name/Instructions from the snapshot pinned in
-        // state at bind time; a normal chat falls back to the default Agent 42 persona.
-        // Old Cosmos state has null persona fields, so existing chats fall back too.
-        var agent = WithResearchLoop(new ChatClientAgent(
-            WithResearchBudget(_chatClientFactory.GetClient(modelId), researchTodos),
-            new ChatClientAgentOptions
-            {
-                Name = _state.State.AgentName ?? "Agent42",
-                ChatOptions = new ChatOptions
-                {
-                    Instructions = WithDocumentAwareness(WithRenderingHints(_state.State.SystemPrompt ?? Instructions)),
-                    // A model that can't do function tools at all (ADR 0013) gets NO schema — including
-                    // the hosted ones — even if it somehow reported SupportsHostedTools.
-                    Tools = capabilities.SupportsTools ? tools : [],
-                    // ADR 0104: the hashed per-conversation prompt-cache key. The Backend's PromptCacheKeyChatClient
-                    // strips it on every call and sends it only to Azure OpenAI.
-                    AdditionalProperties = new() { [PromptCacheKey.PropertyName] = PromptCacheKey.For(this.GetPrimaryKeyString()) },
-                },
-                // Built above: skills (a tool, so already dropped on a no-tools model), document RAG
-                // (ADR 0008, per-conversation) and long-term memory (ADR 0056, selectable since ADR 0057 —
-                // gated by the selection but NOT by capability). The reasoning that used to live here is
-                // with the list, so there is one explanation rather than two.
-                AIContextProviders = contextProviders,
-                // The provider injects retrieval as a ChatRole.User message tagged
-                // AgentRequestMessageSourceType.AIContextProvider. Left in the default history store it
-                // would be persisted into the serialized session — and it carries an attribution struct
-                // the default serializer can't handle, so SerializeSessionAsync would throw every turn
-                // (Step 1 spike). Excluding AIContextProvider (and ChatHistory) messages from storage
-                // keeps the session serializable and small (ADR 0004); retrieval still reaches the model.
-                ChatHistoryProvider = new InMemoryChatHistoryProvider(new InMemoryChatHistoryProviderOptions
-                {
-                    StorageInputRequestMessageFilter = ExcludeInjectedContextMessages,
-                    // The response-side twin (ADR 0071): a reasoning model's "thinking" is streamed to the
-                    // client and then discarded, never stored. Without this the framework persists it —
-                    // measured, on both the streaming and the RunAsync path.
-                    StorageInputResponseMessageFilter = StripReasoningFromStorage,
-                }),
-            }), modelId, researchTodos);
-        return new AgentComposition(agent, researchTodos, CopilotChat: false, CopilotUnavailable: null);
+        return contextProviders;
     }
 
     // The tools this conversation may offer the model: the built-in ones, the ADR 0015 hosted swap when
@@ -194,6 +204,14 @@ public sealed partial class AgentGrain
     // and the copilot composition, so the two can never disagree about what a selection grants. Extracted from
     // BuildAgent unchanged, apart from the hosted-tools switch, which a copilot chat turns off.
     private List<AITool> SelectableTools(ModelCapabilities capabilities, HashSet<string> enabled, bool hostedTools)
+    {
+        var tools = ApplyToolFilters(BuiltInTools(hostedTools), enabled);
+        WrapMcpTools(tools, capabilities, enabled);
+        return tools;
+    }
+
+    // The built-in tools, before any selection: the always-on list plus the ADR 0015 swap (hosted tools or the SearXNG shim).
+    private List<AITool> BuiltInTools(bool hostedTools)
     {
         // The agent's tools. Each is bound to this grain instance, so a tool can reach
         // Orleans (grain factory, reminders, state) directly through `this`.
@@ -325,6 +343,12 @@ public sealed partial class AgentGrain
             tools.Add(webSearch);
         }
 
+        return tools;
+    }
+
+    // The user's selection layer over a tool list.
+    private List<AITool> ApplyToolFilters(List<AITool> tools, HashSet<string> enabled)
+    {
         // User selection layer (ADR 0021): keep only the tools whose catalog key is in the effective set
         // (override ?? user-default ?? all). This runs AFTER the ADR 0015 hosted swap — HostedWebSearchTool
         // and HostedCodeInterpreterTool are named `web_search`/`code_interpreter`, so they filter by the same
@@ -332,8 +356,12 @@ public sealed partial class AgentGrain
         // below (Tools = SupportsTools ? … : []) — a text-only model still gets none, and code_interpreter
         // only survives on a hosted model where it was added at all. The skills provider is filtered in the
         // AIContextProviders switch, not here (it is a context provider, not in this list).
-        tools = [.. tools.Where(t => _toolSelection.IsSelected(t.Name, enabled))];
+        return [.. tools.Where(t => _toolSelection.IsSelected(t.Name, enabled))];
+    }
 
+    // Adds the user's selected remote MCP tools, each wrapped for this conversation, to <paramref name="tools"/>.
+    private void WrapMcpTools(List<AITool> tools, ModelCapabilities capabilities, HashSet<string> enabled)
+    {
         // Remote MCP-server tools (config-driven remote MCP servers) are added AFTER the per-tool
         // IsToolEnabled filter and BEFORE the capability intersection below. Which ones is the selection's call
         // (ToolSelection.SelectedMcpTools: their own three-level hierarchy, sorted per server, none on a no-tools
@@ -344,8 +372,6 @@ public sealed partial class AgentGrain
         {
             tools.Add(WithReauthNotice(server, WithUrlSeeding(server, WithElicitation(server, t))));
         }
-
-        return tools;
     }
 
     // The skills that passed the per-skill selection (ADR 0048), from the merged catalog (ADR 0049), or none on a

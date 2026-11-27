@@ -650,26 +650,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             yield return notice;
         }
 
-        // Images are gated on the model's VISION capability, and this gate is not merely about a turn
-        // that would fail anyway (ADR 0013). An image reaches the model as a SAS URL into our PRIVATE
-        // attachments container (ADR 0004), and the model's host really does fetch that URL server-side
-        // (the ADR 0013 spike confirmed it) — so handing it to a third-party endpoint that cannot even
-        // read images leaks a live credential-bearing URL for nothing. Gate it HERE, in the grain, not
-        // only in the UI: the UI is not a security boundary. A copilot chat never sees images (CanSeeImages).
-        var canSeeImages = CanSeeImages();
-
-        // The same rule decides whether an MCP tool's images reach the model this run (the Chrome-extension ADR).
-        turn.SetToolImagesVisible(canSeeImages);
-
-        // Refresh the image URLs on PRIOR turns before this model call. Azure OpenAI re-fetches
-        // a prior turn's image URL on every subsequent turn (Step 1 spike), and a blob SAS is
-        // short-lived — but a warm grain serves many turns without reactivating, so this must run
-        // per turn, not only on activation, or a long-lived conversation 400s once a SAS expires.
-        // It also applies the vision gate to history — see the method.
-        await RehydrateAttachmentUrlsAsync(canSeeImages);
-
-        // Build the user turn (images, withholding, the TurnAttachments 1:1 join — see the method).
-        var (userMessage, skippedImages) = await BuildUserTurnAsync(message, attachments, canSeeImages);
+        var (userMessage, skippedImages) = await PrepareUserTurnAsync(message, attachments, turn);
 
         // Tell the user their image was withheld, rather than letting the model silently ignore it.
         // This is streamed to the CLIENT and never added to the user's message: a note pushed into
@@ -757,17 +738,7 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             yield break;
         }
 
-        var persisted = await PersistTurnUnlessEphemeralAsync(turn);
-
-        // Outbound webhook (ADR 0094), fire site 1 of 3: gated on what the persist reported.
-        await NotifyAgentWebhookAsync(persisted, new WebhookTurn(
-            ChatTrigger(interactive), message, reply.ToString(), outcome.Stopped, ReplacesLastTurn: replacesLastTurn));
-
-        // Consume site 1 of 2 (ADR 0066): if read_web_document ingested during this run, rebuild now that
-        // the run is over — the tool could not, because a rebuild swaps _session out from under the
-        // framework run iterating it. Covers the live chat path AND /api/agent-run, which drains this
-        // method. Site 2 is in ReceiveReminder, which does NOT drain this method.
-        await RebuildForIngestedWebDocumentAsync(turn);
+        await PersistAndNotifyChatTurnAsync(turn, message, reply, outcome, replacesLastTurn);
 
         foreach (var evt in await TrailingEventsAsync(message, reply, outcome, reauth, interactive))
         {
@@ -775,6 +746,51 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         }
 
         yield return tokens.ToDoneEvent(outcome.Stopped);
+    }
+
+    // The input phase of a chat turn: the vision gate, the history rehydrate and the user message itself. Returns the
+    // message and how many images were withheld; the caller streams the notice, because this method cannot yield.
+    private async Task<(ChatMessage Message, int SkippedImages)> PrepareUserTurnAsync(
+        string message, IReadOnlyList<AttachmentRef>? attachments, TurnContext turn)
+    {
+        // Images are gated on the model's VISION capability, and this gate is not merely about a turn
+        // that would fail anyway (ADR 0013). An image reaches the model as a SAS URL into our PRIVATE
+        // attachments container (ADR 0004), and the model's host really does fetch that URL server-side
+        // (the ADR 0013 spike confirmed it) — so handing it to a third-party endpoint that cannot even
+        // read images leaks a live credential-bearing URL for nothing. Gate it HERE, in the grain, not
+        // only in the UI: the UI is not a security boundary. A copilot chat never sees images (CanSeeImages).
+        var canSeeImages = CanSeeImages();
+
+        // The same rule decides whether an MCP tool's images reach the model this run (the Chrome-extension ADR).
+        turn.SetToolImagesVisible(canSeeImages);
+
+        // Refresh the image URLs on PRIOR turns before this model call. Azure OpenAI re-fetches
+        // a prior turn's image URL on every subsequent turn (Step 1 spike), and a blob SAS is
+        // short-lived — but a warm grain serves many turns without reactivating, so this must run
+        // per turn, not only on activation, or a long-lived conversation 400s once a SAS expires.
+        // It also applies the vision gate to history — see the method.
+        await RehydrateAttachmentUrlsAsync(canSeeImages);
+
+        // Build the user turn (images, withholding, the TurnAttachments 1:1 join — see the method).
+        return await BuildUserTurnAsync(message, attachments, canSeeImages);
+    }
+
+    // The persist phase of a chat turn: write (unless incognito), tell the webhook what the write reported, then pick up
+    // a web document the run ingested. No yield, so it can be awaited between the stream and the trailing events.
+    private async Task PersistAndNotifyChatTurnAsync(
+        TurnContext turn, string message, StringBuilder reply, TurnOutcome outcome, bool replacesLastTurn)
+    {
+        var persisted = await PersistTurnUnlessEphemeralAsync(turn);
+
+        // Outbound webhook (ADR 0094), fire site 1 of 3: gated on what the persist reported.
+        await NotifyAgentWebhookAsync(persisted, new WebhookTurn(
+            ChatTrigger(turn.Interactive), message, reply.ToString(), outcome.Stopped, ReplacesLastTurn: replacesLastTurn));
+
+        // Consume site 1 of 2 (ADR 0066): if read_web_document ingested during this run, rebuild now that
+        // the run is over — the tool could not, because a rebuild swaps _session out from under the
+        // framework run iterating it. Covers the live chat path AND /api/agent-run, which drains this
+        // method. Site 2 is in ReceiveReminder, which does NOT drain this method.
+        await RebuildForIngestedWebDocumentAsync(turn);
     }
 
     // The live-only events between the fully streamed reply and Done. Extracted as one seam so ChatCoreAsync stays
@@ -1289,6 +1305,24 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         CompactToolPayloads();
         var pruned = ApplyRetention();
 
+        // Search projection (ADR 0061). No ephemeral guard needed: the early return above already
+        // took the incognito path, so reaching here means the turn is persisted.
+        // The fleet analyzer panel's chat is never indexed (ADR 0123): its text quotes fleet output and /api/search
+        // would list it, opening a conversation no sidebar knows.
+        await WriteSessionAndIndexAsync(pruned, indexTurns: !AgentKinds.IsFleetAnalyzer(_state.State.AgentKind));
+
+        _logger.LogInformation("Agent grain {GrainKey} completed a turn and persisted its session",
+            this.GetPrimaryKeyString());
+        return true;
+    }
+
+    // The ONE definition of the persist tail (cc-08): serialize the session ONCE, write the state, reconcile the search
+    // index, project the new turns. Compact and prune stay at the call site because their order differs per site (a chat
+    // turn stores MCP apps first, a truncation reconciles them last). Used by the chat turn, a fired reminder, the image
+    // turn, a history truncation and the retention sweep; the fork's first initialisation is deliberately NOT a user
+    // (it registers the retention sweep between the write and the index, and has no prune to reconcile).
+    private async Task WriteSessionAndIndexAsync(bool pruned, bool indexTurns = true)
+    {
         var serializedSession = await _agent.SerializeSessionAsync(_session);
         _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
         // This write carries any shared-state edit made during the run (ADR 0089), so nothing is left to flush.
@@ -1300,19 +1334,11 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // a non-reentrant grain, which must not sit in front of the write ADR 0046's stream recovery reads.
         await _search.ReconcileAfterPruneAsync(pruned);
 
-        // Search projection (ADR 0061). No ephemeral guard needed: the early return above already
-        // took the incognito path, so reaching here means the turn is persisted. Best-effort inside.
-        // When the reconcile above reset the cursor, this is the re-projection from ordinal 0.
-        // The fleet analyzer panel's chat is never indexed (ADR 0123): its text quotes fleet output and /api/search
-        // would list it, opening a conversation no sidebar knows.
-        if (!AgentKinds.IsFleetAnalyzer(_state.State.AgentKind))
+        // Best-effort inside. When the reconcile above reset the cursor, this is the re-projection from ordinal 0.
+        if (indexTurns)
         {
             await _search.IndexNewTurnsAsync();
         }
-
-        _logger.LogInformation("Agent grain {GrainKey} completed a turn and persisted its session",
-            this.GetPrimaryKeyString());
-        return true;
     }
 
     // Builds the user turn. Images ride alongside the text as UriContent parts pointing at a
@@ -1647,83 +1673,21 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
             return;
         }
 
-        // No model configured (ADR 0019): re-resolve in case the user added a provider since activation,
-        // exactly like ChatCoreAsync. A reminder that still finds no model is SKIPPED — never run the no-op
-        // client — so it simply doesn't fire until a provider exists (the user sees nothing, which is right).
-        if (string.IsNullOrEmpty(_modelId))
+        if (!await ReminderCanRunAsync(reminderName))
         {
-            _chatClientFactory = await _chatClientFactoryProvider.GetForUserAsync(_userId);
-            if (string.IsNullOrEmpty(_chatClientFactory.DefaultModelId))
-            {
-                _logger.LogInformation(
-                    "Reminder '{Reminder}' fired for conversation {GrainKey} but no model provider is "
-                    + "configured; skipping.", reminderName, this.GetPrimaryKeyString());
-                return;
-            }
-
-            await RebindModelAsync(_chatClientFactory.DefaultModelId);
-        }
-
-        // A copilot chat with no agent skips the reminder like the no-model case: nothing to run it on. (A reminder
-        // is never incognito, so the other half of CopilotTurnRefusal cannot apply.)
-        if (_copilotUnavailable is not null)
-        {
-            _logger.LogInformation(
-                "Reminder '{Reminder}' fired for conversation {GrainKey} but its copilot agent is unavailable; skipping.",
-                reminderName, this.GetPrimaryKeyString());
             return;
         }
 
-        // Refresh prior turns' image URLs before this model call too (a reminder can fire on a
-        // long-warm grain whose SAS URLs have since expired) — same reason as ChatAsync.
-        var canSeeImages = CanSeeImages();
-        turn.SetToolImagesVisible(canSeeImages);
-        await RehydrateAttachmentUrlsAsync(canSeeImages);
+        var response = await RunReminderPromptAsync(info.Prompt, turn);
 
-        // A reminder-fired turn is a user turn too, so it must push a (always empty) attachment
-        // entry to keep TurnAttachments aligned 1:1 with user turns by index (constraint 11).
-        AlignTurnAttachmentsToHistory();
-        var prompt = new ChatMessage(ChatRole.User, info.Prompt);
-
-        // The research loop's second run site (ADR 0082): this method does not drain ChatCoreAsync, so it resets
-        // the todos, hides the turn and folds it itself, in the same order.
-        var research = BeginResearchRun(prompt);
-        var copilotRun = OpenCopilotRun(turn);
-        AgentResponse response;
-        try
-        {
-            // Inside RunInAsync so the run's tools and providers see this run's context (ADR 0106).
-            response = await TurnContext.RunInAsync(turn, async () => await _agent.RunAsync([prompt], _session));
-        }
-        finally
-        {
-            CloseCopilotRun(copilotRun);
-            // In the finally, so a run that fails in a later iteration still folds the iterations it stored.
-            ReleaseResearchRun(research, foldFirst: true);
-        }
-
-        _state.State.TurnAttachments.Add([]);
-
-        // Retention (ADR 0016), same as the chat path. This site does its OWN serialize — it does not
-        // delegate to PersistTurnUnlessEphemeralAsync — so the call has to be repeated here.
+        // Retention (ADR 0016), same as the chat path. This site does not delegate to PersistTurnUnlessEphemeralAsync
+        // (a fired reminder is never ephemeral, so it needs no guard and always indexes), but it shares the persist tail.
         CompactToolPayloads();
         var pruned = ApplyRetention();
 
-        var serializedSession = await _agent.SerializeSessionAsync(_session);
-        _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
-
         _state.State.ScheduledPrompts[reminderName] = info with { TimesFired = info.TimesFired + 1 };
 
-        // This write carries any shared-state edit made during the run (ADR 0089), so nothing is left to flush.
-        _sharedStateDirty = false;
-        await _state.WriteStateAsync();
-
-        // After the write, for the reason given at the chat site.
-        await _search.ReconcileAfterPruneAsync(pruned);
-
-        // Search projection (ADR 0061). Deliberately NO ephemeral guard here — a fired reminder is never
-        // ephemeral and always persists. Best-effort inside.
-        await _search.IndexNewTurnsAsync();
+        await WriteSessionAndIndexAsync(pruned);
 
         // Consume site 2 of 2 (ADR 0066), and the one that is easy to miss: this method does NOT drain
         // ChatCoreAsync — it calls _agent.RunAsync directly and does its own serialize/write/index —
@@ -1752,11 +1716,15 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // model's own push does not make it redundant (DeliverAwayReplyToChatAsync skips only the home fallback then).
         await DeliverAwayReplyToChatAsync(turn, LastAssistantText(response));
 
-        if (turn.PushesSent > 0)
+        if (turn.PushesSent == 0)
         {
-            return;
+            await TrySendAwayReplyPushAsync();
         }
+    }
 
+    // The defensive wrap round the away-reply push of a fired reminder; the rules it keeps are in RunReminderAsync.
+    private async Task TrySendAwayReplyPushAsync()
+    {
         try
         {
             await SendAwayReplyPushAsync();
@@ -1767,6 +1735,74 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
                 ex, "Away-reply push failed after reminder {GrainKey}; the reply was already persisted.",
                 this.GetPrimaryKeyString());
         }
+    }
+
+    // Whether a fired reminder has a model to run on. A reminder that has none is SKIPPED, never run on the no-op client.
+    private async Task<bool> ReminderCanRunAsync(string reminderName)
+    {
+        // No model configured (ADR 0019): re-resolve in case the user added a provider since activation,
+        // exactly like ChatCoreAsync. A reminder that still finds no model is SKIPPED — never run the no-op
+        // client — so it simply doesn't fire until a provider exists (the user sees nothing, which is right).
+        if (string.IsNullOrEmpty(_modelId))
+        {
+            _chatClientFactory = await _chatClientFactoryProvider.GetForUserAsync(_userId);
+            if (string.IsNullOrEmpty(_chatClientFactory.DefaultModelId))
+            {
+                _logger.LogInformation(
+                    "Reminder '{Reminder}' fired for conversation {GrainKey} but no model provider is "
+                    + "configured; skipping.", reminderName, this.GetPrimaryKeyString());
+                return false;
+            }
+
+            await RebindModelAsync(_chatClientFactory.DefaultModelId);
+        }
+
+        // A copilot chat with no agent skips the reminder like the no-model case: nothing to run it on. (A reminder
+        // is never incognito, so the other half of CopilotTurnRefusal cannot apply.)
+        if (_copilotUnavailable is not null)
+        {
+            _logger.LogInformation(
+                "Reminder '{Reminder}' fired for conversation {GrainKey} but its copilot agent is unavailable; skipping.",
+                reminderName, this.GetPrimaryKeyString());
+            return false;
+        }
+
+        return true;
+    }
+
+    // The model call of a fired reminder: prepare history, run the prompt in the run's context, close the run.
+    private async Task<AgentResponse> RunReminderPromptAsync(string promptText, TurnContext turn)
+    {
+        // Refresh prior turns' image URLs before this model call too (a reminder can fire on a
+        // long-warm grain whose SAS URLs have since expired) — same reason as ChatAsync.
+        var canSeeImages = CanSeeImages();
+        turn.SetToolImagesVisible(canSeeImages);
+        await RehydrateAttachmentUrlsAsync(canSeeImages);
+
+        // A reminder-fired turn is a user turn too, so it must push a (always empty) attachment
+        // entry to keep TurnAttachments aligned 1:1 with user turns by index (constraint 11).
+        AlignTurnAttachmentsToHistory();
+        var prompt = new ChatMessage(ChatRole.User, promptText);
+
+        // The research loop's second run site (ADR 0082): this method does not drain ChatCoreAsync, so it resets
+        // the todos, hides the turn and folds it itself, in the same order.
+        var research = BeginResearchRun(prompt);
+        var copilotRun = OpenCopilotRun(turn);
+        AgentResponse response;
+        try
+        {
+            // Inside RunInAsync so the run's tools and providers see this run's context (ADR 0106).
+            response = await TurnContext.RunInAsync(turn, async () => await _agent.RunAsync([prompt], _session));
+        }
+        finally
+        {
+            CloseCopilotRun(copilotRun);
+            // In the finally, so a run that fails in a later iteration still folds the iterations it stored.
+            ReleaseResearchRun(research, foldFirst: true);
+        }
+
+        _state.State.TurnAttachments.Add([]);
+        return response;
     }
 
     // Rebinds the conversation onto <paramref name="modelId"/>: snapshot → rebuild the agent against the

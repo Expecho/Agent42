@@ -2,6 +2,7 @@ using Agent42.Agents;
 using Agent42.Backend;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Orleans.Storage;
 using Orleans.TestingHost;
 
 namespace Agent42.Tests;
@@ -55,6 +56,11 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
     public void Configure(ISiloBuilder siloBuilder)
     {
         siloBuilder.AddMemoryGrainStorage(AgentGrain.StorageProviderName);
+        // Re-registered under the same name with a recorder in front of the memory store, so the persist-order tests
+        // (cc-08) can see WHEN the state is written relative to the search calls. The last registration wins.
+        siloBuilder.ConfigureServices(services => services.AddKeyedSingleton<IGrainStorage>(
+            AgentGrain.StorageProviderName,
+            (sp, name) => new RecordingGrainStorage(MemoryGrainStorageFactory.Create(sp, (string)name!))));
         siloBuilder.UseInMemoryReminderService();
         // Inert unless a webhook grain's key carries its marker (ADR 0094 delete-order test).
         siloBuilder.AddIncomingGrainCallFilter<FailingWebhookClearFilter>();

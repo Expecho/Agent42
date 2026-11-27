@@ -41,9 +41,12 @@ public sealed class TestChatSearchIndex : IChatSearchIndex
         string conversationId,
         IReadOnlyList<ChatSearchTurn> turns,
         CancellationToken cancellationToken = default)
-        => Failures.TryGetValue(userId, out var error)
+    {
+        PersistOrderLog.Record(userId, PersistOrderLog.Index);
+        return Failures.TryGetValue(userId, out var error)
             ? Task.FromException(error)
             : _inner.IndexTurnsAsync(userId, conversationId, turns, cancellationToken);
+    }
 
     public Task<IReadOnlyList<ChatSearchHit>> SearchAsync(
         string userId, string query, int maxResults, CancellationToken cancellationToken = default)
@@ -70,6 +73,7 @@ public sealed class TestChatSearchIndex : IChatSearchIndex
     public Task DeleteConversationAsync(
         string userId, string conversationId, CancellationToken cancellationToken = default)
     {
+        PersistOrderLog.Record(userId, PersistOrderLog.Reconcile);
         if (Failures.TryGetValue(userId, out var error))
         {
             return Task.FromException(error);

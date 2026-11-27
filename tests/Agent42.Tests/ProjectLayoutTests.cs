@@ -270,6 +270,31 @@ public sealed class ProjectLayoutTests
         Assert.All(assignment.Matches(source), m => Assert.InRange(m.Index, start, end));
     }
 
+    // cc-08: the persist tail has one definition. The session is serialized into the stored state, written, reconciled
+    // and indexed in WriteSessionAndIndexAsync only — a second `SerializedSession = JsonSerializer.Serialize(` would be a
+    // site that can drift from the order (ADR 0106 amendment). The one other user is the fork's first initialisation,
+    // which differs on purpose (it registers the retention sweep between the write and the index, and has nothing to prune).
+    [Fact]
+    public void Persist_SerializesTheSessionInOnePlace()
+    {
+        var persist = new Regex(@"SerializedSession\s*=\s*JsonSerializer\.Serialize\(");
+        var core = Path.Combine(ProjectDir("Agent42.Agents"), "Conversations", "AgentGrain.cs");
+        var fork = Path.Combine(ProjectDir("Agent42.Agents"), "Conversations", "AgentGrain.EditFork.cs");
+
+        foreach (var file in SourceFiles("Agent42.Agents").Where(f => f != core && f != fork))
+        {
+            Assert.False(persist.IsMatch(File.ReadAllText(file)), $"{Path.GetFileName(file)} serializes the session itself");
+        }
+
+        var source = File.ReadAllText(core);
+        var start = source.IndexOf("private async Task WriteSessionAndIndexAsync(", StringComparison.Ordinal);
+        Assert.True(start >= 0, "WriteSessionAndIndexAsync is missing");
+        var end = source.IndexOf("\n    }", start, StringComparison.Ordinal);
+        var matches = persist.Matches(source);
+        Assert.Single(matches);
+        Assert.InRange(matches[0].Index, start, end);
+    }
+
     // AC4b (ADR 0106): the run's context is read only through the fail-closed accessor. The async-local is private to
     // TurnContext.cs and is read there in exactly one place, CurrentOrClosed; no other file declares one.
     [Fact]

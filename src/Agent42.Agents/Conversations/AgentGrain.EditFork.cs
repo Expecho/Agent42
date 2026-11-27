@@ -224,20 +224,14 @@ public sealed partial class AgentGrain
 
     // The persist-site pipeline (ChatCoreAsync's order), with the reconcile forced: the removed turn's index
     // documents can only go by dropping the conversation's and re-projecting, since there is no delete-by-ordinal.
+    // No run is in flight (refused above), so the shared tail's write carries any pending shared-state edit too.
     private async Task PersistTruncationAsync()
     {
         CompactToolPayloads();
         ApplyRetention();
         ReconcileMcpApps();
 
-        var serializedSession = await _agent.SerializeSessionAsync(_session);
-        _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
-        // No run is in flight (refused above), so this write carries any pending shared-state edit too.
-        _sharedStateDirty = false;
-        await _state.WriteStateAsync();
-
-        await _search.ReconcileAfterPruneAsync(pruned: true);
-        await _search.IndexNewTurnsAsync();
+        await WriteSessionAndIndexAsync(pruned: true);
     }
 
     // BindAgentAsync's rebuild shape for the forked session: resolve the model with OnActivateAsync's empty-factory

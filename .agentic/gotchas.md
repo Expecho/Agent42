@@ -241,7 +241,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   `src/Agent42.Agents/Documents/WebDocumentLimits.cs`,
   `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs` (`BuildWebDocumentPayload`),
   `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`ExcludeInjectedContextMessages`),
-  `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatAsync`, and `PersistTurnUnlessEphemeralAsync`'s `SerializeSessionAsync` (reached from `ChatCoreAsync`)),
+  `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatAsync`, and `WriteSessionAndIndexAsync`'s `SerializeSessionAsync` (the persist tail `PersistTurnUnlessEphemeralAsync` calls, reached from `ChatCoreAsync`)),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`ToolResults_DoNotBlowTheSessionSizeBudget`),
   `.agentic/decisions/0004-attachments-in-blob.md`, `.agentic/decisions/0125-remove-fetch-web-page-and-context-dev.md`
 - **Verified:** 2026-11-24
@@ -1468,7 +1468,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   2. **That consume site exists TWICE, and missing the second is a silent bug.** `ChatCoreAsync` (after
      `PersistTurnUnlessEphemeralAsync`) covers the live chat path and `/api/agent-run`, which drains it.
      **`ReceiveReminder` does not drain `ChatCoreAsync`** — it calls `_agent.RunAsync` directly and does
-     its own serialize/write/index — so it needs its own call. Without it a reminder turn that ingested
+     its own persist (the shared `WriteSessionAndIndexAsync` tail) — so it needs its own call. Without it a reminder turn that ingested
      persists the name list and loses the rebuild: retrieval stays detached for the rest of the
      activation while the instructions claim the document exists, and a reactivation silently masks it.
      `ReadWebDocument_AttachesRetrievalAfterReminderTurn` is the half that catches this; it was

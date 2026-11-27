@@ -32,8 +32,6 @@ public sealed partial class AgentGrain
         string message, IReadOnlyList<AttachmentRef>? attachments, WebhookTurn webhookTurn, TurnContext turn,
         string imageModelId, bool autoRouted)
     {
-        var ownerKey = this.GetPrimaryKeyString();
-
         // The generator for this image model. The caller only branches here when GetCapabilities reports
         // image generation, and every wired factory returns a generator in that case — but guard rather than
         // `!`-deref, so a misconfigured factory (a test/DevHost declaring the capability without injecting a
@@ -49,6 +47,21 @@ public sealed partial class AgentGrain
             yield return new AgentStreamEvent(AgentStreamEventType.Done);
             yield break;
         }
+
+        var reference = await GenerateAndStoreImageAsync(generator, message, attachments, autoRouted);
+        await RecordImageTurnForHistoryAsync(message, attachments, reference);
+        await PersistImageTurnAsync(webhookTurn, turn);
+
+        yield return new AgentStreamEvent(
+            AgentStreamEventType.Image, AttachmentId: reference.Id, MediaType: reference.MediaType);
+        yield return new AgentStreamEvent(AgentStreamEventType.Done);
+    }
+
+    // Phase 1: resolve the input image, generate, and store the bytes outside the session. Returns the durable ref.
+    private async Task<AttachmentRef> GenerateAndStoreImageAsync(
+        IImageGenerationService generator, string message, IReadOnlyList<AttachmentRef>? attachments, bool autoRouted)
+    {
+        var ownerKey = this.GetPrimaryKeyString();
 
         // Input image: this turn's attachment wins; else the most recent image already in the conversation
         // (user-uploaded or previously generated); else none (text-to-image). Bytes are read fresh from the
@@ -76,6 +89,13 @@ public sealed partial class AgentGrain
             "Agent grain {GrainKey} generated an image ({Mode}) and stored it as {AttachmentId}",
             this.GetPrimaryKeyString(), input is null ? "text-to-image" : "image-to-image", reference.Id);
 
+        return reference;
+    }
+
+    // Phase 2: record the user and assistant turns into the session, with the 1:1 TurnAttachments join.
+    private async Task RecordImageTurnForHistoryAsync(
+        string message, IReadOnlyList<AttachmentRef>? attachments, AttachmentRef reference)
+    {
         // Build the USER turn for history: the prompt text + THIS turn's uploaded image(s), for display. Record
         // its refs in TurnAttachments, 1:1 with user turns, exactly like a chat turn — so the input image
         // rehydrates and rides the vision gate on any LATER chat turn.
@@ -110,7 +130,11 @@ public sealed partial class AgentGrain
         var assistantContents = new List<AIContent> { new UriContent(assistantUrl, reference.MediaType) };
 
         await RecordImageTurnAsync(new ChatMessage(ChatRole.User, userContents), assistantContents, reference.Id);
+    }
 
+    // Phase 3: persist (unless incognito) and tell the webhook. The only place an image turn writes.
+    private async Task PersistImageTurnAsync(WebhookTurn webhookTurn, TurnContext turn)
+    {
         // Ephemeral (ADR 0034): skip the session write. The generated image's bytes still land in the
         // attachments blob container (session-only ephemerality — an accepted, documented limitation),
         // but the conversation itself leaves no trace in Cosmos.
@@ -121,17 +145,8 @@ public sealed partial class AgentGrain
             CompactToolPayloads();
             var pruned = ApplyRetention();
 
-            var serializedSession = await _agent.SerializeSessionAsync(_session);
-            _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
-            await _state.WriteStateAsync();
-
-            // After the write, for the reason given at the chat site.
-            await _search.ReconcileAfterPruneAsync(pruned);
-
-            // Search projection (ADR 0061). This site really does have an `if (!turn.Ephemeral)` block —
-            // unlike the other two, which are an early return and a no-guard-by-design path — so the
-            // write goes INSIDE it. Best-effort inside.
-            await _search.IndexNewTurnsAsync();
+            // Search projection (ADR 0061) goes INSIDE this block: an incognito turn must not index.
+            await WriteSessionAndIndexAsync(pruned);
 
             // Outbound webhook (ADR 0094), fire site 2 of 3: inside this site's own persist block, because the image
             // turn never reaches the chat persist. A count only, never the image's URL (credential-bearing).
@@ -149,10 +164,6 @@ public sealed partial class AgentGrain
             _logger.LogInformation("Agent grain {GrainKey} completed an ephemeral image-generation turn (not persisted)",
                 this.GetPrimaryKeyString());
         }
-
-        yield return new AgentStreamEvent(
-            AgentStreamEventType.Image, AttachmentId: reference.Id, MediaType: reference.MediaType);
-        yield return new AgentStreamEvent(AgentStreamEventType.Done);
     }
 
     // The input image of an image turn. This turn's attachment always wins. After that a picture the user picked by hand edits the
