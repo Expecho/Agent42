@@ -256,6 +256,19 @@ public class AnthropicCompatibilityChatClientTests
         Assert.Same(foreign, inner.Options!.RawRepresentationFactory!(shim));
     }
 
+    // A fleet agent's YAML model hint is the QUALIFIED catalog id and ends up in ChatOptions.ModelId; Anthropic 404s on
+    // 'Claude:claude-test', so the client's own bare model id must be what goes on the wire.
+    [Fact]
+    public async Task Wire_QualifiedModelIdInOptions_SendsTheBareModel()
+    {
+        var handler = AnthropicStub.Sequence(() => RecordingHttpHandler.Json(AnthropicStub.JsonText));
+
+        await WireClient(handler).GetResponseAsync(
+            [new ChatMessage(ChatRole.User, "hi")], new ChatOptions { ModelId = "Claude:claude-test" });
+
+        Assert.Equal("claude-test", AnthropicStub.Body(handler, 0).GetProperty("model").GetString());
+    }
+
     // AC11: through the real SDK with the shim's factory active, nothing the factory could swallow is lost.
     [Fact]
     public async Task Wire_UnderFactory_KeepsEveryField()
