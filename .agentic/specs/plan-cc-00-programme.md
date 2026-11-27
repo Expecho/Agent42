@@ -75,7 +75,7 @@ existing test suite staying green plus the narrow new tests the child names.
 |---|---|---|---|---|
 | 01 | `completed/plan-cc-01-shape-measurement.md` | `feature/cc-01-shape-measurement` | done (pending merge) | |
 | 02 | `completed/plan-cc-02-test-waits.md` | `feature/cc-02-test-waits` | done (pending merge) | |
-| 03 | `plan-cc-03-silent-catches.md` | `fix/cc-03-silent-catches` | todo | |
+| 03 | `completed/plan-cc-03-silent-catches.md` | `fix/cc-03-silent-catches` | done (pending merge) | |
 | 04 | `plan-cc-04-adapter-helpers.md` | `feature/cc-04-adapter-helpers` | todo | |
 | 05 | `plan-cc-05-pipeline-split.md` | `feature/cc-05-pipeline-split` | todo | |
 | 06 | `plan-cc-06-composition-roots.md` | `feature/cc-06-composition-roots` | todo | |
