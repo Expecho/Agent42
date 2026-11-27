@@ -76,6 +76,16 @@ public sealed class FleetRun
     /// <summary>Called after every attempt (a team's run), to sync the workspace to Blob.</summary>
     public Func<CancellationToken, Task>? AfterAttempt { get; init; }
 
+    private FleetTeamPlan? _seedPlan;
+
+    /// <summary>The plan a recovery rebuilds instead of asking the planner (ADR 0152): the interrupted task's last accepted
+    /// root-team plan. Taken once, by the root team's first attempt, through <see cref="TakeSeedPlan"/>.</summary>
+    public FleetTeamPlan? SeedPlan { init => _seedPlan = value; }
+
+    /// <summary>The seed plan, once: the first caller gets it and every later one gets null, so a later new-team round or a
+    /// sub-team never reuses it.</summary>
+    public FleetTeamPlan? TakeSeedPlan() => Interlocked.Exchange(ref _seedPlan, null);
+
     public IChatClient DefaultClient => Clients[DefaultModel];
 }
 

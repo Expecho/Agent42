@@ -65,7 +65,14 @@ public sealed record FleetTaskRecord
     /// without the field reads empty.</summary>
     public IReadOnlyList<FleetAppliedLesson> AppliedLessons { get; init; } = [];
 
+    /// <summary>The unfinished task this one recovers (ADR 0152): it shares that task's workspace and canvas and starts from
+    /// a digest of what it did. Null for any other task. A recovered task is not a follow-up (<see cref="FollowUpOf"/>).</summary>
+    public string? RecoveredFrom { get; init; }
+
     public bool CanFollowUp => Status == FleetTaskStatus.Done && Result is not null;
+
+    /// <summary>An unfinished task can be recovered (ADR 0152): interrupted, stopped or failed, never running or done.</summary>
+    public bool CanRecover => Status is FleetTaskStatus.Interrupted or FleetTaskStatus.Stopped or FleetTaskStatus.Failed;
 }
 
 /// <summary>The states of a <see cref="FleetTaskRecord"/>.</summary>

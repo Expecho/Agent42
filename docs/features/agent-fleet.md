@@ -18,7 +18,7 @@ Teams up to a configured depth ask you to approve their plan. Permission request
 - **Your models only.** The planner, judge and moderators run on the model you pick, and agents can use any of your tool-capable models. With no provider, the page shows the same "add a provider" gate as the chat.
 - **Tools per task.** Agents get web search, your skills, long-term memory (recall only, nothing a task does is remembered), past chats, push notifications (a tap opens the task) and your MCP tools as your chat default selects them, Copilot agents included. With an image model they can also generate images into the workspace's `images/` folder. Scheduling, location, browser tools, artifacts and code interpreter stay chat-only. Change the **Tools** picker to override that for one task. The task header shows "Tools: your defaults" or "Tools: N selected". Run again keeps the selection.
 - **Bounded.** Every task has a token cap and an agent cap. You run one task at a time, and the operator caps tasks across all users.
-- **Persistent.** Reload the page at any moment and it replays the task. A task that was running when the app restarted shows as **interrupted** and can be run again.
+- **Persistent.** Reload the page at any moment and it replays the task. A task that was running when the app restarted shows as **interrupted**. It can be **recovered** (see below) or run again.
 
 ## Attached files
 
@@ -31,6 +31,12 @@ Agents write named, versioned pages (html, svg, markdown or code) to a shared ca
 ## Graph view
 
 A Details | Graph switch above the task shows teams as boxes and agents as nodes (pending, working, done, failed). Click a node for its output. The choice is remembered in your browser.
+
+## Recover an unfinished task
+
+An interrupted, stopped or failed task offers **Recover** next to **Run again**. Run again starts the request over in a new workspace. Recover starts a new task that shares the old task's workspace and canvas, rebuilds the team you already approved (no planner call and no approval prompt, unless a model or tool it used is gone, in which case a new team is planned), and hands the agents a short digest of what was done: results, reviewer feedback, the todo list and each agent's last output. The digest is data, never instructions. The old task stays as history, and the new one sits under it in the task list (`recovered from #n`).
+
+What it cannot do: an agent is never resumed mid-conversation, and a sub-team's work is not replayed, so the root team's agents start again with the digest. Agent output is kept only while the event log has room. Notes are saved after each attempt, so a task cut off during its first long attempt loses them. A recovered task keeps the old token cap, so a task stopped by the cap will probably hit it again. A task started from a chat asks for approvals on the page when recovered and does not report back to its chat.
 
 ## Follow up and delete
 

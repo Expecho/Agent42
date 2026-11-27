@@ -114,6 +114,9 @@ public sealed class FleetOptions
     /// <summary>The digest's size in characters; the oldest tasks are dropped first.</summary>
     public int DreamMaxDigestChars { get; set; } = 30_000;
 
+    /// <summary>The size in characters of the digest a recovery hands its agents (ADR 0152). Not a user setting.</summary>
+    public int MaxRecoveryDigestChars { get; set; } = 12_000;
+
     /// <summary>Distinct workspaces whose tasks must support a lesson. Below 1 counts as 1.</summary>
     public int DreamMinSupport { get; set; } = 2;
 

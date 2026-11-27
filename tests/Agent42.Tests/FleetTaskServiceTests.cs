@@ -12,7 +12,7 @@ namespace Agent42.Tests;
 /// The fleet's runner service (ADR 0097): submit refusals and caps, follow-ups, stop, shutdown and restart handling,
 /// usage attribution, and the event log's coalescing, cap and replay-then-live ordering.
 /// </summary>
-public sealed class FleetTaskServiceTests : IAsyncDisposable
+public sealed partial class FleetTaskServiceTests : IAsyncDisposable
 {
     private const string Alice = "alice";
     private const string Bob = "bob";

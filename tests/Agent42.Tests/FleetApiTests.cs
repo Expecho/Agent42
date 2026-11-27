@@ -72,6 +72,66 @@ public sealed class FleetApiTests(FleetApiFixture fixture) : SharedClusterTests<
         Assert.Contains(AutoModelRefusal.Message, await response.Content.ReadAsStringAsync());
     }
 
+    private async Task SaveTaskAsync(string user, string id, string status, string? result = null)
+        => await Store.SaveTaskAsync(new FleetTaskRecord
+        {
+            Id = id,
+            UserId = user,
+            Request = Task(),
+            WorkspaceId = "w-" + id,
+            PlannerModel = FleetRunHarness.ModelA,
+            Status = status,
+            Result = result,
+            MaxTokens = 100_000,
+            StartedAt = DateTimeOffset.UtcNow,
+        });
+
+    // ADR 0152: recoverOf starts a new task on an unfinished task's workspace, through the same route.
+    [Fact]
+    public async Task Submit_RecoverOf_StartsATaskThatSharesTheWorkspace()
+    {
+        const string user = "fleet-recover-user";
+        await SaveTaskAsync(user, "rec-int-1", FleetTaskStatus.Interrupted);
+
+        var response = await Send(HttpMethod.Post, "/api/fleet/tasks", user, new { task = "ignored", recoverOf = "rec-int-1" });
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var taskId = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("taskId").GetString()!;
+        var task = await (await Send(HttpMethod.Get, $"/api/fleet/tasks/{taskId}", user)).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("rec-int-1", task.GetProperty("recoveredFrom").GetString());
+        Assert.Equal("w-rec-int-1", task.GetProperty("workspaceId").GetString());
+        var old = await (await Send(HttpMethod.Get, "/api/fleet/tasks/rec-int-1", user)).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(old.GetProperty("canRecover").GetBoolean());
+        Assert.False(old.GetProperty("canFollowUp").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("done")]
+    [InlineData("other user")]
+    [InlineData("unknown")]
+    [InlineData("follow-up")]
+    [InlineData("copy files")]
+    public async Task Submit_RecoverOf_RefusedWith409(string why)
+    {
+        const string user = "fleet-recover-refused";
+        await SaveTaskAsync(user, "rec-done-" + why.Replace(' ', '-'), FleetTaskStatus.Done, "r");
+        await SaveTaskAsync(user, "rec-ok-" + why.Replace(' ', '-'), FleetTaskStatus.Interrupted);
+        await SaveTaskAsync("someone-else", "rec-theirs-" + why.Replace(' ', '-'), FleetTaskStatus.Interrupted);
+        var suffix = why.Replace(' ', '-');
+        object body = why switch
+        {
+            "done" => new { task = "x", recoverOf = "rec-done-" + suffix },
+            "other user" => new { task = "x", recoverOf = "rec-theirs-" + suffix },
+            "unknown" => new { task = "x", recoverOf = "nope" },
+            "follow-up" => new { task = "x", recoverOf = "rec-ok-" + suffix, followUpOf = "rec-done-" + suffix },
+            _ => new { task = "x", recoverOf = "rec-ok-" + suffix, copyInputsOf = "rec-done-" + suffix },
+        };
+
+        var response = await Send(HttpMethod.Post, "/api/fleet/tasks", user, body);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
     private async Task<string> SubmitHeldAsync(string user)
     {
         var response = await Send(HttpMethod.Post, "/api/fleet/tasks", user, new { task = Task(), model = FleetRunHarness.ModelA });

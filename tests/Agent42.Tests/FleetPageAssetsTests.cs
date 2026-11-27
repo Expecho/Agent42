@@ -41,6 +41,20 @@ public sealed class FleetPageAssetsTests(StaticAssetsServerFixture fixture)
         Assert.Equal("same-origin", policy.Groups["value"].Value);
     }
 
+    /// <summary>ADR 0152: the page offers Recover on an unfinished task, sends <c>recoverOf</c>, handles the event the recovery
+    /// publishes, and groups a recovered task under the task it continues. Nothing else enforces that every published event
+    /// has a handler, so this is the guard.</summary>
+    [Fact]
+    public async Task FleetJs_OffersRecover_AndHandlesItsEvent()
+    {
+        var script = await _client.GetStringAsync("/fleet/fleet.js");
+
+        Assert.Contains("\"recover.prepared\"(d) { S.recovered = d; },", script, StringComparison.Ordinal);
+        Assert.Contains("h(\"button\", { class: \"btn primary\", text: \"Recover\"", script, StringComparison.Ordinal);
+        Assert.Contains("recoverOf: recoverOf || null,", script, StringComparison.Ordinal);
+        Assert.Contains("const parentOf = t => t.followUpOf || t.recoveredFrom;", script, StringComparison.Ordinal);
+    }
+
     // AC13 (ADR 0104): the budget metrics show the cached input the budget event now carries.
     [Fact]
     public async Task FleetPage_ShowsCachedInputTokens()
@@ -178,7 +192,7 @@ public sealed class FleetPageAssetsTests(StaticAssetsServerFixture fixture)
         var script = await _client.GetStringAsync("/fleet/fleet.js");
         var css = await _client.GetStringAsync("/fleet/fleet.css");
 
-        Assert.Contains("while (t.followUpOf && at.get(t.followUpOf) > at.get(t.id)) t = tasks[at.get(t.followUpOf)];", script, StringComparison.Ordinal);
+        Assert.Contains("while (parentOf(t) && at.get(parentOf(t)) > at.get(t.id)) t = tasks[at.get(parentOf(t))];", script, StringComparison.Ordinal);
         var start = script.IndexOf("function renderTaskList(", StringComparison.Ordinal);
         Assert.True(start > 0, "renderTaskList is missing");
         var body = script[start..script.IndexOf("function teamLabel(", start, StringComparison.Ordinal)];
