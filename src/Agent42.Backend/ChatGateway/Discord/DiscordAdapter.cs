@@ -195,7 +195,7 @@ internal sealed class DiscordSession : IChatPlatformSession
     {
         var channel = ChannelFor(target);
         var replyTo = channel == target.ThreadId ? null : target.ReplyToMessageId;
-        return (await _api.CreateMessageWithFileAsync(Token, channel, bytes, fileName, mediaType, replyTo, cancellationToken)).ToSendResult();
+        return (await _api.CreateMessageWithFileAsync(Token, channel, new DiscordUploadFile(bytes, fileName, mediaType), replyTo, cancellationToken)).ToSendResult();
     }
 
     public async Task<ChatDownloadedFile?> DownloadAsync(ChatInboundFile file, long maxBytes, CancellationToken cancellationToken)

@@ -156,7 +156,7 @@ internal sealed class TelegramSession : IChatPlatformSession
             fields["reply_parameters"] = JsonSerializer.Serialize(new { message_id = replyId, allow_sending_without_reply = true });
         }
 
-        return (await _api.UploadAsync(Token, "sendPhoto", fields, "photo", bytes, fileName, mediaType, cancellationToken)).ToSendResult();
+        return (await _api.UploadAsync(Token, "sendPhoto", fields, "photo", new TelegramUploadFile(bytes, fileName, mediaType), cancellationToken)).ToSendResult();
     }
 
     // getFile turns the file_id into a path on api.telegram.org (the only host the token ever goes to, since the base URL

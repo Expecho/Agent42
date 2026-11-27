@@ -59,16 +59,14 @@ public sealed class SignalRpcClient(IHttpClientFactory httpClients, ISignalDaemo
 
     public static void AddHttpClients(IServiceCollection services)
     {
-#pragma warning disable EXTEXP0001
         services.AddHttpClient(RpcHttpClientName, http => http.Timeout = TimeSpan.FromSeconds(30))
             .AddHttpMessageHandler(() => new TelegramSpanSuppressingHandler())
             .RemoveAllLoggers()
-            .RemoveAllResilienceHandlers();
+            .WithoutInheritedRetry();
         services.AddHttpClient(EventsHttpClientName, http => http.Timeout = Timeout.InfiniteTimeSpan)
             .AddHttpMessageHandler(() => new TelegramSpanSuppressingHandler())
             .RemoveAllLoggers()
-            .RemoveAllResilienceHandlers();
-#pragma warning restore EXTEXP0001
+            .WithoutInheritedRetry();
     }
 
     /// <summary>Whether <paramref name="chatId"/> addresses a person (an ACI, or an E.164 number) rather than a group.</summary>

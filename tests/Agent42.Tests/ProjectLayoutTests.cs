@@ -930,7 +930,9 @@ public sealed class ProjectLayoutTests
             foreach (Match match in Regex.Matches(source, @"\b[sS]ervices\.AddHttpClient\("))
             {
                 registrations++;
-                if (!Statement(source, match.Index).Contains(".RemoveAllResilienceHandlers()", StringComparison.Ordinal))
+                var statement = Statement(source, match.Index);
+                if (!statement.Contains(".RemoveAllResilienceHandlers()", StringComparison.Ordinal)
+                    && !statement.Contains(".WithoutInheritedRetry()", StringComparison.Ordinal))
                 {
                     offenders.Add($"{Path.GetRelativePath(RepoRoot(), file)}: {source[match.Index..].Split('\n')[0].Trim()}");
                 }
@@ -938,6 +940,10 @@ public sealed class ProjectLayoutTests
         }
 
         Assert.True(registrations > 10, $"Found only {registrations} AddHttpClient registrations; the scan is broken.");
+
+        // WithoutInheritedRetry() is only an opt-out because the helper really calls RemoveAllResilienceHandlers().
+        var helper = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Agent42.Backend", "ChatGateway", "ChatPlatformHttpClient.cs"));
+        Assert.Contains("return builder.RemoveAllResilienceHandlers();", helper, StringComparison.Ordinal);
         Assert.True(offenders.Count == 0, "Named HttpClients without RemoveAllResilienceHandlers():\n" + string.Join("\n", offenders));
     }
 

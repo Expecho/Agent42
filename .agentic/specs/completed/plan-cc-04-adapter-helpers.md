@@ -78,3 +78,17 @@ Shared markdown/mention code; a base adapter class; supervisor backoff unificati
 permanent vs transient differently — record as a possible follow-up only); ChatTurnPipeline (plan 05).
 
 ## Review
+(critic pass 2026-11-27: no blocking findings; gotcha pointer added, helper pin tightened to the `return` statement.)
+
+## Divergence from the plan
+
+- **Step 3 dropped.** The shared status core (429/403/5xx) is about as large as the switch arms it would replace, and Telegram
+  and Discord each need their own ordering and extra cases. `ChatSendErrorsTests.cs` was not added.
+- **Step 4:** call sites keep `services.AddHttpClient(` and end in `.WithoutInheritedRetry()`
+  (`ChatGateway/ChatPlatformHttpClient.cs`, owns the `EXTEXP0001` pragma). `ProjectLayoutTests` accepts either literal and
+  pins that the helper returns `builder.RemoveAllResilienceHandlers()`.
+- **Step 1/2:** `BoundedResponseReader.ReadAsync` has an `HttpContent` overload (Content-Length pre-check + stream) and a
+  `Stream` overload. Slack keeps its status and `text/html` guard.
+- **Step 5:** `TelegramUploadFile` (UploadAsync 8 -> 6 params) and `DiscordUploadFile` (CreateMessageWithFileAsync 7 -> 5).
+  Signal has no file part, so `SignalRpcClient.SendAsync` is unchanged.
+- Full suite: 5 `Live*` tests fail with HTTP 401 (no live Azure key here), unrelated to this change.

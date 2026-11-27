@@ -61,13 +61,11 @@ public sealed class DiscordRestApi(IHttpClientFactory httpClients, DiscordOption
 
     public static void AddHttpClients(IServiceCollection services)
     {
-#pragma warning disable EXTEXP0001
         services.AddHttpClient(HttpClientName, http => http.Timeout = TimeSpan.FromSeconds(30))
-            .RemoveAllResilienceHandlers();
+            .WithoutInheritedRetry();
         services.AddHttpClient(CdnHttpClientName, http => http.Timeout = TimeSpan.FromSeconds(60))
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false })
-            .RemoveAllResilienceHandlers();
-#pragma warning restore EXTEXP0001
+            .WithoutInheritedRetry();
     }
 
     /// <summary>The bot's own user (<c>GET /users/@me</c>), which validates the token.</summary>
@@ -94,12 +92,12 @@ public sealed class DiscordRestApi(IHttpClientFactory httpClients, DiscordOption
     /// <c>allowed_mentions</c> rule as every other message.
     /// </summary>
     public async Task<DiscordResponse> CreateMessageWithFileAsync(
-        string token, string channelId, byte[] bytes, string fileName, string mediaType, string? replyTo, CancellationToken cancellationToken)
+        string token, string channelId, DiscordUploadFile upload, string? replyTo, CancellationToken cancellationToken)
     {
         var payload = new Dictionary<string, object>
         {
             ["allowed_mentions"] = NoMentions,
-            ["attachments"] = new[] { new { id = 0, filename = fileName } },
+            ["attachments"] = new[] { new { id = 0, filename = upload.FileName } },
         };
         if (replyTo is not null)
         {
@@ -107,9 +105,9 @@ public sealed class DiscordRestApi(IHttpClientFactory httpClients, DiscordOption
         }
 
         var form = new MultipartFormDataContent { { JsonContent.Create(payload), "payload_json" } };
-        var file = new ByteArrayContent(bytes);
-        file.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
-        form.Add(file, "files[0]", fileName);
+        var file = new ByteArrayContent(upload.Bytes);
+        file.Headers.ContentType = new MediaTypeHeaderValue(upload.MediaType);
+        form.Add(file, "files[0]", upload.FileName);
         return await SendAsync(token, HttpMethod.Post, $"channels/{channelId}/messages", form, cancellationToken);
     }
 
@@ -138,26 +136,9 @@ public sealed class DiscordRestApi(IHttpClientFactory httpClients, DiscordOption
 
         var client = httpClients.CreateClient(CdnHttpClientName);
         using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength > maxBytes)
-        {
-            return null;
-        }
-
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var buffer = new MemoryStream();
-        var chunk = new byte[81920];
-        int read;
-        while ((read = await stream.ReadAsync(chunk, cancellationToken)) > 0)
-        {
-            if (buffer.Length + read > maxBytes)
-            {
-                return null;
-            }
-
-            buffer.Write(chunk, 0, read);
-        }
-
-        return buffer.ToArray();
+        return response.IsSuccessStatusCode
+            ? await BoundedResponseReader.ReadAsync(response.Content, maxBytes, cancellationToken)
+            : null;
     }
 
     public static bool IsPinnedAttachmentUrl(string url, Uri? standIn)
@@ -214,6 +195,9 @@ public sealed class DiscordRestApi(IHttpClientFactory httpClients, DiscordOption
                     : null);
     }
 }
+
+/// <summary>The file part of a Discord multipart message.</summary>
+public sealed record DiscordUploadFile(byte[] Bytes, string FileName, string MediaType);
 
 /// <summary>Where Discord lives. Only DevHost and tests point it at local stand-ins.</summary>
 /// <param name="ApiBaseUrl">The REST base, ending in <c>/</c>.</param>

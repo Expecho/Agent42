@@ -440,7 +440,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   so **every** `HttpClient` in the Backend — including one you just registered with `AddHttpClient("name")`
   — inherits 3 retries plus the handler's own per-attempt and total timeouts. Setting `HttpClient.Timeout`
   does **not** opt out: the retry pipeline still wraps the call. `RemoveAllResilienceHandlers()` is what
-  actually does. This bites the web tools (ADR 0011/0066): `AgentGrain` is **non-reentrant**, so a
+  actually does (the chat adapters spell it `.WithoutInheritedRetry()`, `src/Agent42.Backend/ChatGateway/ChatPlatformHttpClient.cs`, which calls it; `EveryNamedHttpClient_RemovesTheInheritedRetryPipeline` accepts either). This bites the web tools (ADR 0011/0066): `AgentGrain` is **non-reentrant**, so a
   retried call multiplies the stall on a conversation's turn by four. (A second reason applies to the document
   fetch client: a `BlockedAddressException` from the SSRF guard surfaces as a transient `HttpRequestException`
   and would be re-dialled.) Note the shipped pipeline (resilience + service discovery) is assembled in `Program.cs`

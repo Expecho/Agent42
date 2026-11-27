@@ -389,7 +389,7 @@ public sealed class TelegramTokenLeakTests : IAsyncLifetime
         await api.CallAsync(Token, "getMe", null, CancellationToken.None);
         await api.GetUpdatesAsync(Token, 0, CancellationToken.None);
         await api.DownloadFileAsync(Token, "documents/x.pdf", 100, CancellationToken.None);
-        await api.UploadAsync(Token, "sendPhoto", new Dictionary<string, string> { ["chat_id"] = "1" }, "photo", [1], "x.png", "image/png", CancellationToken.None);
+        await api.UploadAsync(Token, "sendPhoto", new Dictionary<string, string> { ["chat_id"] = "1" }, "photo", new TelegramUploadFile([1], "x.png", "image/png"), CancellationToken.None);
 
         Assert.DoesNotContain(spans, s => s.TagObjects.Any(t => t.Value?.ToString()?.Contains(Token, StringComparison.Ordinal) == true)
             || s.DisplayName.Contains(Token, StringComparison.Ordinal));
