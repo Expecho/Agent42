@@ -65,8 +65,12 @@ public sealed class AnthropicCompatibilityChatClient(IChatClient inner, string m
         clone.TopP = null;
         clone.TopK = null;
         clone.Reasoning = RewriteReasoning(clone.Reasoning);
+        // This client is built for ONE bare model id, so that id always wins. A caller's ChatOptions.ModelId can hold the
+        // QUALIFIED catalog id (a fleet agent's YAML model hint, 'Claude:claude-opus-5-5', which the framework's
+        // ChatClientPromptAgentFactory copies into the options), and Anthropic answers that with a 404 not_found_error.
+        clone.ModelId = model;
         clone.RawRepresentationFactory = CachingFactory(
-            clone.RawRepresentationFactory, clone.ModelId ?? model,
+            clone.RawRepresentationFactory, model,
             clone.MaxOutputTokens ?? AnthropicLimits.DefaultMaxOutputTokens);
         return clone;
     }
