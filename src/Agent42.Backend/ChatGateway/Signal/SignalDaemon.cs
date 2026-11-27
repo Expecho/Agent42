@@ -475,10 +475,8 @@ public static class SignalDaemonRegistration
     /// </summary>
     public static IServiceCollection AddSignalDaemon(this IServiceCollection services)
     {
-#pragma warning disable EXTEXP0001
         services.AddHttpClient(SignalDaemon.CheckHttpClientName, http => http.Timeout = TimeSpan.FromSeconds(3))
-            .RemoveAllResilienceHandlers();
-#pragma warning restore EXTEXP0001
+            .WithoutInheritedRetry();
         services.AddSingleton<ISignalProcessLauncher, SignalProcessLauncher>();
         services.AddSingleton(sp => new SignalDaemon(
             sp.GetRequiredService<SignalOptions>(),

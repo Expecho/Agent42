@@ -35,6 +35,9 @@ public sealed record TelegramResponse(bool Ok, JsonElement Result, int ErrorCode
     }
 }
 
+/// <summary>The file part of a Telegram multipart upload.</summary>
+public sealed record TelegramUploadFile(byte[] Bytes, string FileName, string MediaType);
+
 /// <summary>
 /// The handful of Telegram Bot API calls the gateway uses (ADR 0111), hand-rolled on two named clients rather than a
 /// library: about ten JSON POSTs do not justify a dependency and its CVE surface.
@@ -68,20 +71,18 @@ public sealed class TelegramBotApi(IHttpClientFactory httpClients, TelegramOptio
     /// </summary>
     public static void AddHttpClients(IServiceCollection services)
     {
-#pragma warning disable EXTEXP0001
         services.AddHttpClient(HttpClientName, http => http.Timeout = TimeSpan.FromSeconds(30))
             .AddHttpMessageHandler(() => new TelegramSpanSuppressingHandler())
             .RemoveAllLoggers()
-            .RemoveAllResilienceHandlers();
+            .WithoutInheritedRetry();
         services.AddHttpClient(PollHttpClientName, http => http.Timeout = PollTimeout + TimeSpan.FromSeconds(20))
             .AddHttpMessageHandler(() => new TelegramSpanSuppressingHandler())
             .RemoveAllLoggers()
-            .RemoveAllResilienceHandlers();
+            .WithoutInheritedRetry();
         services.AddHttpClient(FilesHttpClientName, http => http.Timeout = TimeSpan.FromMinutes(2))
             .AddHttpMessageHandler(() => new TelegramSpanSuppressingHandler())
             .RemoveAllLoggers()
-            .RemoveAllResilienceHandlers();
-#pragma warning restore EXTEXP0001
+            .WithoutInheritedRetry();
     }
 
     public Task<TelegramResponse> CallAsync(string token, string method, object? body, CancellationToken cancellationToken)
@@ -102,26 +103,9 @@ public sealed class TelegramBotApi(IHttpClientFactory httpClients, TelegramOptio
         var client = httpClients.CreateClient(FilesHttpClientName);
         using var response = await client.GetAsync(
             Endpoint($"file/bot{token}/{filePath}"), HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength > maxBytes)
-        {
-            return null;
-        }
-
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var buffer = new MemoryStream();
-        var chunk = new byte[81920];
-        int read;
-        while ((read = await stream.ReadAsync(chunk, cancellationToken)) > 0)
-        {
-            if (buffer.Length + read > maxBytes)
-            {
-                return null;
-            }
-
-            buffer.Write(chunk, 0, read);
-        }
-
-        return buffer.ToArray();
+        return response.IsSuccessStatusCode
+            ? await BoundedResponseReader.ReadAsync(response.Content, maxBytes, cancellationToken)
+            : null;
     }
 
     /// <summary>
@@ -130,7 +114,7 @@ public sealed class TelegramBotApi(IHttpClientFactory httpClients, TelegramOptio
     /// </summary>
     public async Task<TelegramResponse> UploadAsync(
         string token, string method, IReadOnlyDictionary<string, string> fields, string fileField,
-        byte[] bytes, string fileName, string mediaType, CancellationToken cancellationToken)
+        TelegramUploadFile upload, CancellationToken cancellationToken)
     {
         using var form = new MultipartFormDataContent();
         foreach (var (name, value) in fields)
@@ -138,9 +122,9 @@ public sealed class TelegramBotApi(IHttpClientFactory httpClients, TelegramOptio
             form.Add(new StringContent(value), name);
         }
 
-        var file = new ByteArrayContent(bytes);
-        file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mediaType);
-        form.Add(file, fileField, fileName);
+        var file = new ByteArrayContent(upload.Bytes);
+        file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(upload.MediaType);
+        form.Add(file, fileField, upload.FileName);
 
         var client = httpClients.CreateClient(FilesHttpClientName);
         using var response = await client.PostAsync(Endpoint($"bot{token}/{method}"), form, cancellationToken);

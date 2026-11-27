@@ -60,13 +60,11 @@ public sealed class SlackWebApi(IHttpClientFactory httpClients, SlackOptions opt
 
     public static void AddHttpClients(IServiceCollection services)
     {
-#pragma warning disable EXTEXP0001
         services.AddHttpClient(HttpClientName, http => http.Timeout = TimeSpan.FromSeconds(30))
-            .RemoveAllResilienceHandlers();
+            .WithoutInheritedRetry();
         services.AddHttpClient(FilesHttpClientName, http => http.Timeout = TimeSpan.FromSeconds(60))
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false })
-            .RemoveAllResilienceHandlers();
-#pragma warning restore EXTEXP0001
+            .WithoutInheritedRetry();
     }
 
     /// <summary>Calls <paramref name="method"/> with a JSON body (or none) under <paramref name="token"/>.</summary>
@@ -175,15 +173,12 @@ public sealed class SlackWebApi(IHttpClientFactory httpClients, SlackOptions opt
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", botToken);
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        if (!response.IsSuccessStatusCode
-            || response.Content.Headers.ContentType?.MediaType == "text/html"
-            || response.Content.Headers.ContentLength > maxBytes)
+        if (!response.IsSuccessStatusCode || response.Content.Headers.ContentType?.MediaType == "text/html")
         {
             return null;
         }
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        return await ReadCappedAsync(stream, maxBytes, cancellationToken);
+        return await BoundedResponseReader.ReadAsync(response.Content, maxBytes, cancellationToken);
     }
 
     // HTTPS on files.slack.com only, or (DevHost and tests) exactly the configured stand-in's scheme, host and port.
@@ -200,24 +195,6 @@ public sealed class SlackWebApi(IHttpClientFactory httpClients, SlackOptions opt
         }
 
         return uri.Scheme == Uri.UriSchemeHttps && uri.Host.Equals(FilesHost, StringComparison.OrdinalIgnoreCase) && uri.IsDefaultPort;
-    }
-
-    private static async Task<byte[]?> ReadCappedAsync(Stream stream, long maxBytes, CancellationToken cancellationToken)
-    {
-        using var buffer = new MemoryStream();
-        var chunk = new byte[81920];
-        int read;
-        while ((read = await stream.ReadAsync(chunk, cancellationToken)) > 0)
-        {
-            if (buffer.Length + read > maxBytes)
-            {
-                return null;
-            }
-
-            buffer.Write(chunk, 0, read);
-        }
-
-        return buffer.ToArray();
     }
 }
 
