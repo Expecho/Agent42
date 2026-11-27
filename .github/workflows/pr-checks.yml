@@ -99,3 +99,33 @@ jobs:
         with:
           node-version: 22
       - run: node .agentic/scripts/check-doc-paths.mjs
+
+  # Layer 1 of the e2e smoke (ADR 0151, gate e2e_failing_tests_max): Playwright against the offline DevHost.
+  e2e-devhost:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 11.0.x
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tests/e2e/package-lock.json
+      - run: dotnet restore tools/Agent42.DevHost
+      - run: npm ci
+        working-directory: tests/e2e
+      - run: npx playwright install --with-deps chromium
+        working-directory: tests/e2e
+      - run: npx playwright test devhost
+        working-directory: tests/e2e
+        env:
+          E2E_PROJECT: devhost
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            tests/e2e/playwright-report
+            tests/e2e/test-results

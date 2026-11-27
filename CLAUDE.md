@@ -21,6 +21,8 @@ frontend in `wwwroot/` · Bicep + GitHub Actions → Azure Container Apps
 | Type check | `dotnet build Agent42.slnx` |
 | Code shape | `node .agentic/scripts/code-shape.mjs` — method length (lines of code), params, class size per `src/`, `tools/`, `tests/`; `--json <file>` writes machine-readable output (baseline: `.agentic/code-shape-baseline.json`). A report, not a gate |
 | Android app (test, lint, build) | `./gradlew test lint assembleDebug` in `tools/Agent42.Android` — needs JDK 21 + Android SDK (`ANDROID_HOME`); CI runs it in `.github/workflows/android.yml` |
+| E2E browser smoke (DevHost) | `npm ci && npx playwright install chromium && E2E_PROJECT=devhost npx playwright test devhost` in `tests/e2e` — starts DevHost itself; CI job `e2e-devhost`. Self-host layer: `.github/workflows/e2e-selfhost.yml` (see `docs/features/self-hosting.md`) |
+| Post-deploy smoke | `bash infra/smoke-test.sh <base-url> [--no-auth-wall]` — curl only; run by the `smoke` job in `.github/workflows/deploy.yml` after `deploy` (ADR 0151) |
 
 ## Hard rules
 
@@ -204,4 +206,4 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Android companion app (`tools/Agent42.Android`): WebView sign-in + Easy Auth cookie, NDJSON contract golden file, full-duplex voice on the call audio path (amends 0079 for the app only), sideloaded signed APK | 0114 |
 | Self-hosting: `Storage:Provider` = `azure` (default, prod) or `local` (Postgres + a filesystem volume, `compose.yaml`, no Azure account); ADO.NET grain storage with the same `$type` JSON, pgvector (no ANN index), file stores, attachment reference URLs inlined as bytes per request, no auth, no migration | 0127 |
 | Deployment: tenant-portable IaC, create-or-reuse shared infra, repo variables, `preflight`, `infra/bootstrap.sh`; published multi-arch images on GHCR (compose pulls them, `az acr import` for Azure) | 0128, 0130 |
-| Layout and quality: feature folders, ES modules, gates, complexity, test clusters, shared silo registration + reachability test, AgentGrain services + per-run TurnContext | 0039, 0040, 0041, 0050, 0051, 0055, 0105, 0106, 0149 |
+| Layout and quality: feature folders, ES modules, gates, complexity, test clusters, shared silo registration + reachability test, AgentGrain services + per-run TurnContext, three e2e smoke layers | 0039, 0040, 0041, 0050, 0051, 0055, 0105, 0106, 0149, 0151 |

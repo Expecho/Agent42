@@ -5127,3 +5127,24 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Backend/Auth/PublicPaths.cs`, `tests/Agent42.Tests/EntraAuthTests.cs`, `tests/Agent42.Tests/ProjectLayoutTests.cs`,
   `.agentic/decisions/0145-native-entra-sign-in.md`
 - **Verified:** 2026-11-25
+
+### `/health` and `/alive` exist only in Development, so a post-deploy smoke cannot use them
+
+- **Claim:** `MapDefaultEndpoints` maps `/health` and `/alive` only when `IsDevelopment()`, and the Bicep defines no ACA probes, so
+  production has no health endpoint to curl. `infra/smoke-test.sh` probes the Easy-Auth-excluded public paths instead (200), plus a
+  negative probe (an unauthenticated `GET /api/conversations` must be 401/302/403: 200 means Easy Auth is not in front) and an empty
+  `POST /api/email-in` (400/401/403/503; 404 means the exclusion or route is gone). DevHost has neither `AddServiceDefaults` nor auth,
+  so run the script against it with `--no-auth-wall`. The script's `PUBLIC_PATHS` is pinned to the Bicep `excludedPaths` by
+  `E2eWorkflowTests`. ADR 0151.
+- **Evidence:** `src/Agent42.ServiceDefaults/Extensions.cs`, `infra/smoke-test.sh`, `tests/Agent42.Tests/E2eWorkflowTests.cs`
+- **Verified:** 2026-11-27
+
+### Compose derives its project name from the directory: a stack you start here recreates a developer's own self-host stack
+
+- **Claim:** `compose.yaml` sets no `name:`, so every `docker compose up` in the repo root is project `agent42` and reuses the containers and
+  volumes of a developer's real self-host stack; passing different secrets (the e2e overlay's Postgres password) recreates `app`
+  against the old volume and fails with `28P01`. `tests/e2e/selfhost/compose.e2e.yaml` sets `name: agent42-e2e` so the e2e volumes are
+  separate and `down -v` removes only those. Relative `volumes:` paths in an overlay resolve against the FIRST compose file's directory
+  (the repo root), not the overlay's.
+- **Evidence:** `tests/e2e/selfhost/compose.e2e.yaml`, `tests/e2e/selfhost.spec.mjs`
+- **Verified:** 2026-11-27

@@ -1,0 +1,50 @@
+# Layer 3 of the e2e smoke (ADR 0151): the self-host compose stack (Postgres + file volume, ADR 0127) with a stub LLM.
+# Built from source, because the published image is not the PR's code. Gate: e2e_failing_tests_max (quality-gates.yaml).
+name: E2E self-host
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - src/**
+      - compose*.yaml
+      - tests/e2e/**
+      - Directory.Packages.props
+      - .github/workflows/e2e-selfhost.yml
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selfhost:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE: docker compose -f compose.yaml -f compose.build.yaml -f tests/e2e/selfhost/compose.e2e.yaml
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tests/e2e/package-lock.json
+      - run: npm ci
+        working-directory: tests/e2e
+      - run: npx playwright install --with-deps chromium
+        working-directory: tests/e2e
+      - name: Build and start the stack
+        run: $COMPOSE up -d --build
+      - name: Run the self-host smoke
+        run: npx playwright test selfhost
+        working-directory: tests/e2e
+        env:
+          E2E_PROJECT: selfhost
+      - name: Dump app logs on failure
+        if: failure()
+        run: $COMPOSE logs --no-color app llm-stub
+      - name: Tear down
+        if: always()
+        run: $COMPOSE down -v

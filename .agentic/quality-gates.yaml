@@ -24,12 +24,17 @@ gates:
   # when the gate was set (25 offenders over 7), carried by SonarLint.xml, and ratchets down. One reasoned
   # exemption (the AgentGrain ctor, 18) is a path-scoped section in .editorconfig.
   method_params_max: 11
+  # tests/e2e/playwright.config.mjs (ADR 0151): the three e2e smoke layers. The measurement is Playwright's exit status in
+  # the CI job (e2e-devhost, e2e-selfhost.yml) and the `smoke` job's script, the same shape as vulnerable_packages: 0 —
+  # a job result, not a computed number. The key is numeric only because QualityGateTests requires it.
+  e2e_failing_tests_max: 0
 
 enforcement:
   local: soft_warning        # skills render the gate table, ask proceed/abort on FAIL
   ci: hard_block             # PR checks (.github/workflows/pr-checks.yml) block on:
                              # build, tests, dotnet format, vulnerable packages,
-                             # doc-path integrity, bicep build, and new-code coverage.
+                             # doc-path integrity, bicep build, new-code coverage and the e2e smoke
+                             # layers (e2e-devhost in pr-checks.yml, e2e-selfhost.yml; post-deploy `smoke` in deploy.yml).
                              # cognitive_complexity_max BLOCKS: S3776 is an `error`, so a method over
                              # the threshold fails `dotnet build` (ADR 0051 cleared the backlog that
                              # ADR 0050 had to carry).

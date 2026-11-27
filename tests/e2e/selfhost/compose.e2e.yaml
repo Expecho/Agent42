@@ -1,0 +1,23 @@
+# Overlay for the self-host smoke (ADR 0151). Use with the build-from-source files so the stack is the PR's code:
+#   docker compose -f compose.yaml -f compose.build.yaml -f tests/e2e/selfhost/compose.e2e.yaml up -d --build
+# Sets the two required secrets inline (no .env needed) and adds an OpenAI-compatible stub LLM.
+# A dedicated project name keeps the e2e volumes apart from a developer's own self-host stack (project "agent42").
+name: agent42-e2e
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: e2e-postgres-password
+  searxng:
+    environment:
+      SEARXNG_SECRET: e2e-searxng-secret-not-for-production
+  app:
+    environment:
+      ConnectionStrings__postgres: Host=postgres;Database=agent42;Username=agent42;Password=e2e-postgres-password;GSS Encryption Mode=Disable
+    depends_on:
+      llm-stub:
+        condition: service_started
+  llm-stub:
+    image: node:22-alpine
+    command: ["node", "/stub/llm-stub.mjs"]
+    volumes:
+      - ./tests/e2e/selfhost/llm-stub.mjs:/stub/llm-stub.mjs:ro

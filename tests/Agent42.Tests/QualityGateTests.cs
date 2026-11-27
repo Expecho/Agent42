@@ -40,6 +40,7 @@ public sealed class QualityGateTests
         { "cognitive_complexity_max", "Directory.Packages.props" },
         { "method_lines_max", "Directory.Packages.props" },
         { "method_params_max", "Directory.Packages.props" },
+        { "e2e_failing_tests_max", "tests/e2e/playwright.config.mjs" },
     };
 
     /// <summary>Each analyzer-enforced gate: its yaml key, its Sonar rule, the rule's parameter name and built-in default.</summary>

@@ -108,6 +108,10 @@ The Configuration tab (Preferences) shows the provider and marks the Azure-only 
 Browse the app at `localhost`, not `127.0.0.1`: the redirect URI is built from the request and must match the callback you
 registered. Copilot models run only in Copilot-kind agents (see [`bring-your-own-models.md`](bring-your-own-models.md)).
 
+## Smoke test
+
+CI builds this stack from source with a stub LLM and checks one chat round-trip and that the conversation survives an `app` restart (`.github/workflows/e2e-selfhost.yml`, ADR 0151). To run it yourself: `docker compose -f compose.yaml -f compose.build.yaml -f tests/e2e/selfhost/compose.e2e.yaml up -d --build`, then `E2E_PROJECT=selfhost npx playwright test selfhost` in `tests/e2e`. It uses its own compose project (`agent42-e2e`), so it never touches your own stack.
+
 ## See also
 
 - [`.agentic/decisions/0127-self-hosting-local-storage-provider.md`](https://github.com/Expecho/Agent42/blob/main/.agentic/decisions/0127-self-hosting-local-storage-provider.md)

@@ -220,6 +220,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: [preflight, build-and-push]
+    outputs:
+      backend-url: ${{ steps.deploy.outputs.backend-url }}
     steps:
       - uses: actions/checkout@v7
 
@@ -274,9 +276,11 @@ jobs:
             optional+=(identityAliases="$IDENTITY_ALIASES")
           fi
 
-          az deployment group create \
+          # The deployment's backendUrl output (the revision FQDN, never a tenant literal) feeds the smoke job.
+          backend_url=$(az deployment group create \
             --resource-group "$RESOURCE_GROUP" \
             --template-file infra/main.bicep \
+            --query properties.outputs.backendUrl.value -o tsv \
             --parameters \
               imageTag="${{ needs.build-and-push.outputs.image-tag }}" \
               searxngImageTag="${{ needs.build-and-push.outputs.image-tag }}" \
@@ -294,4 +298,14 @@ jobs:
               appInsightsConnectionString="${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}" \
               vapidPrivateKey="${{ secrets.VAPID_PRIVATE_KEY }}" \
               mailgunSigningKey="${{ secrets.MAILGUN_SIGNING_KEY }}" \
-              "${optional[@]}"
+              "${optional[@]}")
+          echo "backend-url=$backend_url" >> "$GITHUB_OUTPUT"
+
+  # Post-deploy smoke (ADR 0151): unauthenticated curl probes against the new revision. No credentials, so no login step.
+  smoke:
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - uses: actions/checkout@v7
+      - name: Smoke test the deployed revision
+        run: bash infra/smoke-test.sh "${{ needs.deploy.outputs.backend-url }}"
