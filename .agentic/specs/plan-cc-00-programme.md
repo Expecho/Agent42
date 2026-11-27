@@ -80,7 +80,7 @@ existing test suite staying green plus the narrow new tests the child names.
 | 05 | `plan-cc-05-pipeline-split.md` | `feature/cc-05-pipeline-split` | done | |
 | 06 | `completed/plan-cc-06-composition-roots.md` | `feature/cc-06-composition-roots` | done (pending merge) | |
 | 07 | `completed/plan-cc-07-fleet-config-endpoints.md` | `feature/cc-07-fleet-config-endpoints` | done (pending merge) | |
-| 08 | `plan-cc-08-grain-persist-phases.md` | `feature/cc-08-grain-persist-phases` | todo | |
+| 08 | `completed/plan-cc-08-grain-persist-phases.md` | `feature/cc-08-grain-persist-phases` | done (pending merge) | |
 | 09 | `plan-cc-09-grain-leaf-tools.md` | `feature/cc-09-grain-leaf-tools` | todo | |
 | 10 | `plan-cc-10-grain-tier-b.md` | `feature/cc-10-grain-tier-b` | conditional on 09's result | |
 | 11 | `plan-cc-11-enforce-and-docs.md` | `feature/cc-11-enforce-and-docs` | todo, last | |

@@ -97,3 +97,23 @@ New collaborator types (plan 09); behaviour changes (file any bug the characteri
 
 Critic: HIGH #2 (non-existent MCP pins) and #3 (three → six persist sites; webhook return value) accepted and fixed above;
 LOW (serialize-once AC) accepted.
+
+## Divergence from the plan (as implemented)
+
+- **Helper shape.** The plan said `PersistTurnAsync(TurnContext, …)`. What shipped is `WriteSessionAndIndexAsync(bool pruned,
+  bool indexTurns = true)`, which takes no `TurnContext`: the tail needs no per-run data, and ephemeral handling stays in
+  `PersistTurnUnlessEphemeralAsync` and the image turn, whose return value the webhook still uses.
+- **Sites.** Five of the six use it: chat, reminder, image, truncation, sweep. The fork's first init is excluded, with the
+  reason in the helper's comment and ADR 0106's amendment note.
+- **One behaviour alignment (not a refactor-only change), at two sites.** The retention sweep also clears the flag now (harmless: it returns early while a run is in flight). The image turn now clears `_sharedStateDirty` after its write,
+  like every other full-state write. Effect: at most one redundant `WriteStateAsync` at `EndRunAsync` is skipped.
+- **Order tests.** Observed through a recording grain-storage decorator and a record in `TestChatSearchIndex`
+  (`PersistOrderLog`), not by wrapping the grain. The webhook ordering is left to `AgentWebhookTurnTests`, because the
+  webhook send is one-way and its position relative to the write cannot be observed from outside the grain.
+- **Serialize-once AC.** Pinned by a source test (`Persist_SerializesTheSessionInOnePlace`) rather than a call counter.
+- **Step 7 numbers.** All five methods were already at or under 100 lines of code at the start (code-shape: ChatTurnAsync 99,
+  SelectableTools 91, GenerateImageTurnAsync 77, RunReminderAsync 69). After the split the longest is ChatTurnAsync at 93, and
+  `BuiltInTools` at 86 (a flat list of tool descriptions). The gain is phase readability, not crossing a threshold.
+- **Pre-existing failures.** `LiveModelChatTests.RealModel_DescribesAnUploadedImage` and four `LiveCopilotTests` fail with
+  HTTP 401 from the real Azure endpoint (a Foundry key is configured here but rejected). They need live credentials and are
+  unrelated to this change.

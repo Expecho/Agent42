@@ -86,3 +86,25 @@ retention, edit/fork and tool selection were grain methods that only a silo coul
 - Search, retention, edit/fork and selection logic now have plain xUnit tests with no silo. The silo tests still pin
   the end-to-end behaviour, and they pass unchanged.
 - No persisted state, grain interface, endpoint or frontend change, so no migration is needed.
+
+## Amendment (cc-08): one persist tail, and the long methods split into phases
+
+No alternative was rejected, so this is a note. The persist sequence was hand-copied at six sites (five now share it, plus the fork init) with ordering that
+matters. It now has one definition, `WriteSessionAndIndexAsync(pruned, indexTurns)` in `AgentGrain.cs`: serialize the
+session **once**, write the state (clearing `_sharedStateDirty`), `ReconcileAfterPruneAsync`, then `IndexNewTurnsAsync`.
+Compact and prune stay at each call site because their order differs (a chat turn stores MCP apps first; a truncation
+reconciles them last).
+
+- **Uses the helper:** the chat turn (`PersistTurnUnlessEphemeralAsync`, which still decides ephemeral and returns the
+  bool the outbound webhook gates on), a fired reminder, the image turn, `PersistTruncationAsync`, and the retention sweep.
+- **Deliberately excluded:** the fork's first initialisation (`AgentGrain.EditFork.cs`). It registers the retention sweep
+  between the write and the index and has no prune to reconcile, so folding it in would need a flag per difference.
+- **One behaviour alignment, at two sites:** the image turn and the retention sweep used not to clear `_sharedStateDirty` after
+  their full-state write, against the field's own rule ("cleared by every full state write"). They now do. For the image turn
+  the last run to finish skips one redundant write; the sweep returns early while a run is in flight, so nothing was pending.
+- `PersistOrder_*` in `AgentGrainPersistOrderTests` pins write → (reconcile) → index per site, using the
+  `RecordingGrainStorage` the test silo now puts in front of the memory store. `Persist_SerializesTheSessionInOnePlace`
+  in `ProjectLayoutTests` pins that no other file serializes the session into the stored state.
+- `RunReminderAsync`, `ChatTurnAsync`, `GenerateImageTurnAsync`, `ComposeAgent` and `SelectableTools` are split into
+  private phase methods of the same partial class (no new type boundary). `yield` cannot sit in a try/catch, so the
+  iterators call non-yielding phase helpers around the streamed section rather than containing it.
