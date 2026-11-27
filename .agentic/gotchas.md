@@ -590,7 +590,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Agents/ClientTools/AgentGrain.ClientTools.cs` (`PullAsync`, `DisposeRunAsync`),
   `src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs` (`_copilotRuns`, `OpenCopilotRun`),
   `src/Agent42.Agents/Copilot/SchedulerBoundAIFunction.cs`, `src/Agent42.Agents/Copilot/ChatClientCopilotAgentFactory.cs`,
-  `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs`, `src/Agent42.Agents/Push/AgentGrain.PushTool.cs`,
+  `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs`, `src/Agent42.Agents/Push/PushTools.cs`,
   `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs`, `src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs`,
   `src/Agent42.Agents/SharedState/AgentGrain.SharedState.cs`, `src/Agent42.Agents/Memory/AgentGrain.Memory.cs`,
   `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`, `src/Agent42.Backend/Conversations/ChatContracts.cs`
@@ -616,7 +616,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   a model-named place is *forward* geocoding, a different tool that needs `PrivateAddressGuard`.
 - **Enforced by:** `AgentGrainTests.GetCurrentLocation_ExposesNoParameters` (`tests/Agent42.Tests/AgentGrainTests.cs`;
   also `GetCurrentLocation_InvalidFix_NeverReachesTheGeocoder`)
-- **Evidence:** `src/Agent42.Backend/Location/GoogleGeocoder.cs`, `src/Agent42.Agents/Location/AgentGrain.LocationTool.cs`
+- **Evidence:** `src/Agent42.Backend/Location/GoogleGeocoder.cs`, `src/Agent42.Agents/Location/LocationTools.cs`
   (`GetCurrentLocationAsync`, `ParseBrowserFix`), `tests/Agent42.Tests/AgentGrainTests.cs`
   (`GetCurrentLocation_ExposesNoParameters`, `GetCurrentLocation_InvalidFix_NeverReachesTheGeocoder`),
   `.agentic/decisions/0012-user-location-google-geocoding.md`, `.agentic/decisions/0093-location-as-a-client-tool.md`
@@ -2151,7 +2151,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   is *not* watching, so firing it from the live stream would be self-defeating — and every trap above still
   holds exactly as written. A **model-invoked** push (`send_push_notification`, ADR 0075) is a different
   thing: the model asked for it, so it may fire from ANY path including the live `ChatAsync` turn. That is
-  why it lives in a separate partial (`src/Agent42.Agents/Push/AgentGrain.PushTool.cs`) rather than beside
+  why it lives in a separate file, now its own class (`src/Agent42.Agents/Push/PushTools.cs`, moved out of the grain by plan cc-09) rather than beside
   `SendAwayReplyPushAsync` — **the file split is the documentation that these are two rules**. Do not merge
   the two files and do not "harmonise" their placement rules. One behaviour change lands on the two call
   sites above: both now also carry `&& turn.PushesSent == 0`, so the generic away-reply push is **suppressed
@@ -2173,7 +2173,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   all, `EnqueuePrompt_NoModel_DoesNotSendPush`, and for the suppression half
   `ReceiveReminder_SuppressesAwayReplyPush_WhenToolAlreadyPushed` +
   `EnqueuePrompt_SuppressesAwayReplyPush_WhenToolAlreadyPushed`),
-  `src/Agent42.Agents/Push/AgentGrain.PushTool.cs` (the model-invoked sibling),
+  `src/Agent42.Agents/Push/PushTools.cs` (the model-invoked sibling),
   `.agentic/decisions/0028-web-push-when-agent-replies-while-away.md`,
   `.agentic/decisions/0075-model-invoked-push-notification.md`,
   `src/Agent42.Backend/Push/PushTestNotifier.cs` + `tests/Agent42.Tests/PushTestNotifierTests.cs` (the
@@ -2192,7 +2192,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   run a model with **no `Tools`**, and ADR 0070's `ask_agent` goes through `ChatAsync`.
 - **Evidence:** `src/Agent42.Agents/Conversations/TurnContext.cs` (`PushesSent`, `RecordPushSent`),
   `src/Agent42.Agents/Conversations/AgentGrain.cs` (the `turn.PushesSent` reads in `EnqueuePromptAsync` and
-  `RunReminderAsync`), `src/Agent42.Agents/Push/AgentGrain.PushTool.cs` (the only site that records a push, on the
+  `RunReminderAsync`), `src/Agent42.Agents/Push/PushTools.cs` (the only site that records a push, on the
   SEND and not on the attempt, so a refused call does not consume budget),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`PushTool_CounterResetsOnTheReminderPath`,
   `PushTool_CounterResetsOnTheNextTurn`, `PushTool_CapsPushesPerTurn`,
@@ -4730,7 +4730,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Backend/Fleet/FleetTaskService.Run.cs` (`FinishAsync`, `NotifyOriginAsync`),
   `src/Agent42.Backend/Fleet/FleetCopilotPermissionPolicy.cs`, `src/Agent42.Backend/Fleet/DecliningFleetInteraction.cs`,
   `src/Agent42.Backend/Fleet/FleetTeamRunner.Planning.cs` (`ApproveAsync`),
-  `src/Agent42.Agents/Fleet/AgentGrain.FleetTools.cs`, `src/Agent42.Agents/Conversations/AgentGrain.cs`
+  `src/Agent42.Agents/Fleet/FleetTools.cs`, `src/Agent42.Agents/Conversations/AgentGrain.cs`
   (`ReceiveFleetResultAsync`, `RunBackgroundTurnAsync`), `tests/Agent42.Tests/FleetAutoApproveTests.cs`,
   `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`OriginTask_NeverOpensQuestion`, `Answer_AutoTask_Conflict`,
   `Finish_Done_WithOrigin_NotifiesOnce`, `Shutdown_Interrupted_DoesNotNotify`), `tests/Agent42.Tests/FleetToolTests.cs`

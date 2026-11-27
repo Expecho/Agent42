@@ -6,6 +6,7 @@ tags: [search, tools, selection, recall, cosmos, full-text, egress, untrusted, n
 supersedes: []
 extends: [0061, 0021, 0098]
 amends: [0061, 0070, 0096]
+amended_by: [0147]
 ---
 
 # The model can search and read the user's other conversations (`past_chats`)

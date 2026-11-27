@@ -10,16 +10,21 @@ namespace Agent42.Agents;
 /// The chat's fleet tools (ADR 0115): <c>start_fleet_task</c> starts an agent fleet task tied to this conversation,
 /// and <c>get_fleet_task</c> reads one. The fleet runs in-process in the Backend (ADR 0097), reached through the
 /// <see cref="IFleetLauncher"/> port. When the task finishes, the result comes back through
-/// <see cref="ReceiveFleetResultAsync"/> as a background turn.
+/// <c>AgentGrain.ReceiveFleetResultAsync</c> as a background turn.
 ///
 /// <para>Three refusals, all inside the tool and read from the run's <see cref="TurnContext"/> (ADR 0106), never from
 /// a field: an incognito turn (a task outlives the turn and would leave a trace, the <c>schedule_prompt</c> rule), a
 /// fleet-result turn (the loop guard), and a second start in one turn.</para>
+///
+/// <para>Built per grain activation with <c>new</c> (ADR 0106's pattern, extended by the leaf-tool ADR); public only
+/// because this repo has no <c>InternalsVisibleTo</c>. <paramref name="modelId"/> is a delegate because the grain's model
+/// can change after activation; everything else is fixed for the activation.</para>
 /// </summary>
-public sealed partial class AgentGrain
+public sealed class FleetTools(
+    IFleetLauncher fleet, ILogger logger, string grainKey, string userId, string conversationId, Func<string> modelId)
 {
     // The descriptions are the policy the model obeys (rule 11); they live in FleetToolLimits so a test can pin them.
-    private AITool[] FleetTools() =>
+    public AITool[] Functions() =>
     [
         AIFunctionFactory.Create(StartFleetTaskAsync, name: FleetToolLimits.StartToolName, description: FleetToolLimits.StartDescription),
         AIFunctionFactory.Create(GetFleetTaskAsync, name: FleetToolLimits.GetToolName, description: FleetToolLimits.GetDescription),
@@ -51,16 +56,16 @@ public sealed partial class AgentGrain
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // A tool must never brick the turn (the ReadDocumentAsync shape).
-            _logger.LogError(ex, "Agent grain {GrainKey} failed to start a fleet task", this.GetPrimaryKeyString());
+            logger.LogError(ex, "Agent grain {GrainKey} failed to start a fleet task", grainKey);
             return $"I could not start the fleet task: {ex.Message}";
         }
     }
 
     private async Task<string> StartFleetTaskCoreAsync(string task, string? followUpOf)
     {
-        var conversationId = ConversationIdFromGrainKey(this.GetPrimaryKeyString());
-        var model = string.IsNullOrEmpty(_modelId) ? null : _modelId;
-        var (taskId, error) = await _fleet.StartAsync(_userId, conversationId, task, model, followUpOf);
+        var current = modelId();
+        var model = string.IsNullOrEmpty(current) ? null : current;
+        var (taskId, error) = await fleet.StartAsync(userId, conversationId, task, model, followUpOf);
         if (taskId is null)
         {
             return $"The fleet task did not start: {error ?? "no reason was given"}";
@@ -74,7 +79,7 @@ public sealed partial class AgentGrain
 
     // The run's refusals, in order: incognito, the loop guard, then the per-turn cap. Outside a run the context is
     // Closed, which is ephemeral, so the tool fails closed.
-    private static string? FleetStartRefusal()
+    public static string? FleetStartRefusal()
     {
         var context = TurnContext.CurrentOrClosed;
         if (context.Ephemeral)
@@ -106,13 +111,13 @@ public sealed partial class AgentGrain
         {
             // Ownership: the launcher reads the task of THIS conversation's user only, so another user's id reads as
             // not found.
-            return await _fleet.GetAsync(_userId, taskId.Trim()) is { } record
+            return await fleet.GetAsync(userId, taskId.Trim()) is { } record
                 ? FormatFleetTask(record)
                 : $"No fleet task with id '{taskId.Trim()}' was found.";
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Agent grain {GrainKey} failed to read fleet task {TaskId}", this.GetPrimaryKeyString(), taskId);
+            logger.LogError(ex, "Agent grain {GrainKey} failed to read fleet task {TaskId}", grainKey, taskId);
             return $"I could not read the fleet task: {ex.Message}";
         }
     }

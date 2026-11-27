@@ -103,6 +103,13 @@ public sealed partial class FakeChatClient : IChatClient
     /// <summary>Prompt marker that streams a usage report with cache reads and Anthropic-style cache writes (ADR 0104).</summary>
     public const string CacheUsageMarker = "report cache usage";
 
+    /// <summary>
+    /// Prompt marker that makes the streaming reply carry a <c>[toolschemas:…[/toolschemas]</c> dump of every function
+    /// tool's name, description and JSON schema, sorted by name. The golden-snapshot guard for moving tools between
+    /// classes (plan cc-09): the model reads exactly these three things, so they must stay byte-identical.
+    /// </summary>
+    public const string ToolSchemaDumpMarker = "dump tool schemas";
+
     /// <summary>The reasoning text <see cref="ReasoningStreamMarker"/> produces.</summary>
     public const string ReasoningText = "The user said hello, so I should greet them back.";
 
@@ -343,7 +350,7 @@ public sealed partial class FakeChatClient : IChatClient
             await Task.Yield();
         }
 
-        var echo = LoopEcho(messages) + ToolsEcho(options) + RequestContextEcho() + TraceEcho()
+        var echo = LoopEcho(messages) + ToolsEcho(options) + ToolSchemaEcho(messages, options) + RequestContextEcho() + TraceEcho()
             + InstructionsEcho(messages, options)
             + ContextEcho(messages) + ImageEcho(messages) + AllImagesEcho(messages)
             + EmptyMessageEcho(messages) + ToolResultEcho(messages) + ScriptedResultEcho(list);
@@ -543,6 +550,20 @@ public sealed partial class FakeChatClient : IChatClient
     // listed: every echo is persisted into the session, and the session-size budget tests measure it.
     private static string ToolsEcho(ChatOptions? options)
         => $"[tools:{string.Join(",", options?.Tools?.Select(t => t.Name) ?? [])}] " + ToolTypesEcho(options);
+
+    private static string ToolSchemaEcho(IEnumerable<ChatMessage> messages, ChatOptions? options)
+    {
+        if (LastUserText(messages)?.Contains(ToolSchemaDumpMarker, StringComparison.OrdinalIgnoreCase) != true)
+        {
+            return "";
+        }
+
+        var lines = (options?.Tools ?? [])
+            .OfType<AIFunctionDeclaration>()
+            .OrderBy(t => t.Name, StringComparer.Ordinal)
+            .Select(t => JsonSerializer.Serialize(new { t.Name, t.Description, Schema = t.JsonSchema }));
+        return "[toolschemas:" + string.Join('\n', lines) + "[/toolschemas]";
+    }
 
     private static string ToolTypesEcho(ChatOptions? options)
     {

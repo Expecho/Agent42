@@ -210,6 +210,21 @@ public sealed class CopilotAgentTests(SharedClusterFixture fixture) : SharedClus
         Assert.Contains(FleetToolLimits.GetToolName, tools);
     }
 
+    // Plan cc-09: the tool sets moved out of the grain into per-activation classes (PastChatTools, FleetTools, PushTools,
+    // LocationTools) still reach Copilot wrapped in SchedulerBoundAIFunction, because Copilot calls tools from its own RPC
+    // thread and a tool that reads TurnContext or calls a grain must run on the activation's scheduler.
+    [Fact]
+    public async Task CopilotFunctions_MovedToolSets_AreSchedulerBound()
+    {
+        await CopilotChatAsync("copilot-moved-tools", tools: ToolCatalog.AllSelectableToolKeys);
+
+        var tools = LastRequest("copilot-moved-tools").Tools.ToDictionary(t => t.Name);
+        foreach (var name in new[] { PastChatLimits.SearchToolName, FleetToolLimits.StartToolName, "send_push_notification" })
+        {
+            Assert.IsType<SchedulerBoundAIFunction>(tools[name]);
+        }
+    }
+
     // ADR 0122/0123: the analyzer reads attacker-influenceable text and a Copilot chat runs a shell unasked (ADR 0107).
     // It is composed only for the panel's kind now, so none of its tools reaches a Copilot chat; the fleet tools are the control.
     [Fact]

@@ -6,6 +6,7 @@ tags: [fleet, agents, tools, selection, background-turn, push, chat-apps, github
 supersedes: []
 extends: [0022, 0028, 0106, 0111]
 amends: [0097, 0021]
+amended_by: [0147]
 ---
 
 # A chat can start a fleet task, and the result comes back as a background turn

@@ -7,16 +7,19 @@ namespace Agent42.Agents;
 /// <summary>
 /// The fleet-analyzer tools (ADR 0122), composed only for the panel's <see cref="AgentKinds.FleetAnalyzer"/> kind (ADR 0123):
 /// the agent in the conversation diagnoses a fleet task and can act on it, without a new team. The fleet is reached through the <see cref="IFleetLauncher"/> port, and the user
-/// id is always this grain's <c>_userId</c>, never an argument, so another user's task reads as not found.
+/// id is always this grain's, never an argument, so another user's task reads as not found.
 ///
 /// <para>Everything the read tools return is fleet or telemetry output, already capped and framed as data by the port.
 /// The two actions are guarded: <c>stop_fleet_task</c> is the safe one and is not limited; <c>rerun_fleet_task</c> starts
-/// a task, so it shares <see cref="FleetStartRefusal"/> with <c>start_fleet_task</c> (incognito, fleet-result turn, one
+/// a task, so it shares <see cref="FleetTools.FleetStartRefusal"/> with <c>start_fleet_task</c> (incognito, fleet-result turn, one
 /// per turn). A tool never throws into the turn: failures come back as text.</para>
+///
+/// <para>Built per grain activation with <c>new</c> (ADR 0106's pattern, extended by the leaf-tool ADR); public only
+/// because this repo has no <c>InternalsVisibleTo</c>.</para>
 /// </summary>
-public sealed partial class AgentGrain
+public sealed class FleetAnalyzerTools(IFleetLauncher fleet, ILogger logger, string grainKey, string userId)
 {
-    private AITool[] FleetAnalyzerTools() =>
+    public AITool[] Functions() =>
     [
         AIFunctionFactory.Create(ListFleetTasksAsync, name: FleetAnalyzerLimits.ListToolName, description: FleetAnalyzerLimits.ListDescription),
         AIFunctionFactory.Create(AnalyzeFleetTaskAsync, name: FleetAnalyzerLimits.AnalyzeToolName, description: FleetAnalyzerLimits.AnalyzeDescription),
@@ -29,36 +32,36 @@ public sealed partial class AgentGrain
     ];
 
     private Task<string> ListFleetTasksAsync([Description("How many tasks, newest first. Default 10.")] int? limit = null)
-        => FleetAnalyzerCallAsync(FleetAnalyzerLimits.ListToolName, () => _fleet.ListRecentAsync(
-            _userId, FleetAnalyzerLimits.Clamp(limit, FleetAnalyzerLimits.DefaultListLimit, FleetAnalyzerLimits.MaxListLimit)));
+        => FleetAnalyzerCallAsync(FleetAnalyzerLimits.ListToolName, () => fleet.ListRecentAsync(
+            userId, FleetAnalyzerLimits.Clamp(limit, FleetAnalyzerLimits.DefaultListLimit, FleetAnalyzerLimits.MaxListLimit)));
 
     private Task<string> AnalyzeFleetTaskAsync([Description("The fleet task id, from list_fleet_tasks or the fleet page.")] string taskId)
-        => TaskCallAsync(FleetAnalyzerLimits.AnalyzeToolName, taskId, id => _fleet.AnalyzeAsync(_userId, id));
+        => TaskCallAsync(FleetAnalyzerLimits.AnalyzeToolName, taskId, id => fleet.AnalyzeAsync(userId, id));
 
     private Task<string> ReadFleetEventsAsync(
         [Description("The fleet task id.")] string taskId,
         [Description("Optional comma-separated event types to keep, e.g. 'agent.failed,verdict'.")] string? types = null,
         [Description("Only events with a seq above this. Default 0; use the seq the previous page ended on.")] long? afterSeq = null,
         [Description("Events per page. Default 40, at most 100.")] int? limit = null)
-        => TaskCallAsync(FleetAnalyzerLimits.EventsToolName, taskId, id => _fleet.ReadEventsAsync(
-            _userId, id, types, afterSeq ?? 0,
+        => TaskCallAsync(FleetAnalyzerLimits.EventsToolName, taskId, id => fleet.ReadEventsAsync(
+            userId, id, types, afterSeq ?? 0,
             FleetAnalyzerLimits.Clamp(limit, FleetAnalyzerLimits.DefaultEventLimit, FleetAnalyzerLimits.MaxEventLimit)));
 
     private Task<string> ReadFleetWorkspaceAsync(
         [Description("The fleet task id.")] string taskId,
         [Description("A workspace file path to read. Leave empty to list the files.")] string? path = null)
-        => TaskCallAsync(FleetAnalyzerLimits.WorkspaceToolName, taskId, id => _fleet.ReadWorkspaceAsync(_userId, id, path));
+        => TaskCallAsync(FleetAnalyzerLimits.WorkspaceToolName, taskId, id => fleet.ReadWorkspaceAsync(userId, id, path));
 
-    private Task<string> GetFleetConfigAsync() => FleetAnalyzerCallAsync(FleetAnalyzerLimits.ConfigToolName, () => _fleet.DescribeConfigAsync(_userId));
+    private Task<string> GetFleetConfigAsync() => FleetAnalyzerCallAsync(FleetAnalyzerLimits.ConfigToolName, () => fleet.DescribeConfigAsync(userId));
 
     private Task<string> ReadRecentSpansAsync(
         [Description("Optional text to look for in span names, errors and tag values.")] string? search = null,
         [Description("Spans to return, newest last. Default 15, at most 40.")] int? limit = null)
-        => FleetAnalyzerCallAsync(FleetAnalyzerLimits.SpansToolName, () => _fleet.ReadSpansAsync(
-            _userId, search, FleetAnalyzerLimits.Clamp(limit, FleetAnalyzerLimits.DefaultSpanLimit, FleetAnalyzerLimits.MaxSpanLimit)));
+        => FleetAnalyzerCallAsync(FleetAnalyzerLimits.SpansToolName, () => fleet.ReadSpansAsync(
+            userId, search, FleetAnalyzerLimits.Clamp(limit, FleetAnalyzerLimits.DefaultSpanLimit, FleetAnalyzerLimits.MaxSpanLimit)));
 
     private Task<string> StopFleetTaskAsync([Description("The id of the running fleet task to stop.")] string taskId)
-        => TaskCallAsync(FleetAnalyzerLimits.StopToolName, taskId, id => _fleet.StopAsync(_userId, id));
+        => TaskCallAsync(FleetAnalyzerLimits.StopToolName, taskId, id => fleet.StopAsync(userId, id));
 
     private async Task<string> RerunFleetTaskAsync(
         [Description("The id of the task to repeat.")] string taskId,
@@ -71,14 +74,14 @@ public sealed partial class AgentGrain
             return "Pass the id of the fleet task to re-run.";
         }
 
-        if (FleetStartRefusal() is { } refusal)
+        if (FleetTools.FleetStartRefusal() is { } refusal)
         {
             return refusal;
         }
 
         try
         {
-            var (newId, error) = await _fleet.RerunAsync(_userId, taskId.Trim(), note, disableTools, maxTokens);
+            var (newId, error) = await fleet.RerunAsync(userId, taskId.Trim(), note, disableTools, maxTokens);
             if (newId is null)
             {
                 return $"The re-run did not start: {error ?? "no reason was given"}";
@@ -91,7 +94,7 @@ public sealed partial class AgentGrain
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Agent grain {GrainKey} failed to re-run fleet task {TaskId}", this.GetPrimaryKeyString(), taskId);
+            logger.LogError(ex, "Agent grain {GrainKey} failed to re-run fleet task {TaskId}", grainKey, taskId);
             return $"I could not re-run the fleet task: {ex.Message}";
         }
     }
@@ -110,7 +113,7 @@ public sealed partial class AgentGrain
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Agent grain {GrainKey} failed in fleet analyzer tool {Tool}", this.GetPrimaryKeyString(), tool);
+            logger.LogError(ex, "Agent grain {GrainKey} failed in fleet analyzer tool {Tool}", grainKey, tool);
             return $"{tool} failed: {ex.Message}";
         }
     }

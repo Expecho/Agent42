@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
 namespace Agent42.Agents;
@@ -28,9 +29,42 @@ namespace Agent42.Agents;
 /// is unknowable by design (ADR 0028's best-effort, prune-on-404 contract). "Queued to N device(s)" is the
 /// strongest true statement available, and both this return value and the tool description say exactly
 /// that.</para>
+///
+/// <para>Built per grain activation with <c>new</c> (ADR 0106's pattern, extended by the leaf-tool ADR); public only
+/// because this repo has no <c>InternalsVisibleTo</c>. <paramref name="deliverToChat"/> is the grain's chat-gateway
+/// delivery (ADR 0111), a method group because it reads grain state.</para>
 /// </summary>
-public sealed partial class AgentGrain
+public sealed class PushTools(
+    IPushNotificationSender pushSender,
+    IGrainFactory grains,
+    ILogger logger,
+    string grainKey,
+    string userId,
+    string conversationId,
+    Func<TurnContext, string, string, CancellationToken, Task> deliverToChat)
 {
+    /// <summary>
+    /// The <c>send_push_notification</c> function as the model sees it.
+    ///
+    /// <para>The rule the model actually obeys is THIS DESCRIPTION, not a SKILL.md (ADR 0067's lesson: the
+    /// description ships in the JSON schema every turn, a skill does not). So the whole policy is here —
+    /// when it is worth interrupting for, the per-turn cap, and the standing ban on claiming delivery,
+    /// which the tool cannot know and must never imply.</para>
+    /// </summary>
+    public AIFunction Function() => AIFunctionFactory.Create(
+        SendPushNotificationAsync,
+        name: "send_push_notification",
+        description: "Send a push notification to the user's own devices. Use this ONLY when something "
+            + "is worth interrupting the user for and they are not already reading it here: a long job "
+            + "you were asked to watch has finished or failed, a scheduled check found something that "
+            + "needs them, or they explicitly asked to be notified. Do NOT use it to announce your "
+            + "reply, to greet, to confirm you understood, or to repeat what you are already saying in "
+            + "this message — the user can see your reply. At most "
+            + "3 notifications per turn; write the news itself into the title, because that is all a "
+            + "locked screen shows. It reports only that the notification was QUEUED: there is no "
+            + "delivery receipt, so never tell the user it definitely arrived, and never treat it as a "
+            + "way to ask them something and wait for an answer.");
+
     /// <summary>
     /// Agent tool: sends a Web Push notification to the user's subscribed devices (ADR 0075). Exposed to
     /// the model as <c>send_push_notification</c>.
@@ -43,10 +77,10 @@ public sealed partial class AgentGrain
     ///
     /// <para>The <see cref="CancellationToken"/> is supplied by <c>AIFunctionFactory</c> from the
     /// invocation context and kept out of the JSON schema, so the model never sees it — the same
-    /// arrangement as <c>GetCurrentLocationAsync</c>. It is here because the grain is non-reentrant and an
+    /// arrangement as <c>LocationTools.GetCurrentLocationAsync</c>. It is here because the grain is non-reentrant and an
     /// abandoned turn should not hold the activation for the send's full budget.</para>
     /// </summary>
-    private async Task<string> SendPushNotificationAsync(
+    internal async Task<string> SendPushNotificationAsync(
         [Description("The notification title — what the user reads first, on a locked screen, with no context. Put the actual news in it: 'Build 412 failed', not 'Update'. At most 100 characters; a longer one is shortened.")] string title,
         [Description("One or two sentences of detail under the title. At most 300 characters; a longer one is shortened. Plain text only — line breaks and blank lines are collapsed to spaces, because a notification is one paragraph.")] string body,
         CancellationToken cancellationToken)
@@ -91,7 +125,7 @@ public sealed partial class AgentGrain
         // Read the subscriptions directly (see the class remarks — the sender cannot tell us this). With
         // none, there is no device to reach, and the model needs to know its notification went nowhere
         // rather than assuming the user was told.
-        var devices = await GrainFactory.GetGrain<IUserPushGrain>(_userId).GetAllAsync();
+        var devices = await grains.GetGrain<IUserPushGrain>(userId).GetAllAsync();
         if (devices.Count == 0)
         {
             return "The user has no devices subscribed to notifications, so there was nothing to send to. "
@@ -102,22 +136,22 @@ public sealed partial class AgentGrain
         // Incremented HERE, on the send — see the budget guard above.
         turn.RecordPushSent();
 
-        await _pushSender.SendAsync(
-            _userId,
-            new PushMessage(cleanTitle, cleanBody, ConversationIdFromGrainKey(this.GetPrimaryKeyString())),
+        await pushSender.SendAsync(
+            userId,
+            new PushMessage(cleanTitle, cleanBody, conversationId),
             cancellationToken);
 
         // The home chat, beside Web Push (ADR 0111, C9). Best-effort and never throws; it does not change what the
         // tool tells the model, which is about devices.
-        await DeliverNotificationToChatAsync(turn, cleanTitle, cleanBody, cancellationToken);
+        await deliverToChat(turn, cleanTitle, cleanBody, cancellationToken);
 
         // Never log the title or the body: they are model-authored text about whatever this user is doing,
         // and this repo stamps user identity onto every span (ADR 0010) — the same rule
         // GetCurrentLocationAsync carries for the coordinates. Log that the tool ran and how many devices
         // it queued to, nothing else. PushTool_DoesNotLogNotificationText pins this.
-        _logger.LogInformation(
+        logger.LogInformation(
             "Agent grain {GrainKey} queued a model-invoked push notification to {Devices} device(s) ({Sent} this turn)",
-            this.GetPrimaryKeyString(), devices.Count, turn.PushesSent);
+            grainKey, devices.Count, turn.PushesSent);
 
         // "Queued", never "delivered" or "sent to the user" — see the class remarks. The title is echoed
         // so the model can see what actually went out after sanitizing and capping.

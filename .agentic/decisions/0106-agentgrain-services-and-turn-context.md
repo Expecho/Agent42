@@ -6,6 +6,7 @@ tags: [refactor, structure, agents, orleans, turn-state, tools, testing, no-migr
 supersedes: []
 extends: [0039]
 amends: [0034, 0039, 0066, 0075, 0089, 0098]
+amended_by: [0147]
 ---
 
 # AgentGrain delegates to per-activation services; per-run state is an explicit `TurnContext`, never a field

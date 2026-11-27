@@ -145,6 +145,14 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
     // to pick it up without waiting for a reactivation.
     private string _userId = null!;
 
+    // The leaf tool sets (plan cc-09), each built with `new` in OnActivateAsync beside the ADR 0106 services. A tool set
+    // holds the service it reaches and no grain state; what it needs of the grain is passed in at construction.
+    private LocationTools _location = null!;
+    private PastChatTools _pastChats = null!;
+    private PushTools _push = null!;
+    private FleetTools _fleetTools = null!;
+    private FleetAnalyzerTools _fleetAnalyzerTools = null!;
+
     // The user's DEFAULT selectable-tools set (ADR 0021), read ONCE on activation from IUserProfileGrain —
     // null means "all selectable tools" (the null==all sentinel). It is the middle layer of the resolution
     // override ?? default ?? all (see EffectiveEnabledTools): a per-conversation override or an agent snapshot
@@ -272,6 +280,17 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         _search = CreateSearchProjection();
         _retention = new HistoryRetention(_timeProvider, _logger, this.GetPrimaryKeyString());
         _forking = new ConversationForking(_attachments, _logger);
+        _location = new LocationTools(_geocoder, _logger, this.GetPrimaryKeyString(), AwaitClientResultAsync);
+        _pastChats = new PastChatTools(
+            _chatSearchIndex, GrainFactory, _userId, ConversationIdFromGrainKey(this.GetPrimaryKeyString()),
+            this.GetPrimaryKeyString(), _logger);
+        _push = new PushTools(
+            _pushSender, GrainFactory, _logger, this.GetPrimaryKeyString(), _userId,
+            ConversationIdFromGrainKey(this.GetPrimaryKeyString()), DeliverNotificationToChatAsync);
+        _fleetTools = new FleetTools(
+            _fleet, _logger, this.GetPrimaryKeyString(), _userId, ConversationIdFromGrainKey(this.GetPrimaryKeyString()),
+            () => _modelId);
+        _fleetAnalyzerTools = new FleetAnalyzerTools(_fleet, _logger, this.GetPrimaryKeyString(), _userId);
         _chatClientFactory = await _chatClientFactoryProvider.GetForUserAsync(_userId, cancellationToken);
 
         // An empty factory (the user has configured no chat provider — ADR 0019) has DefaultModelId "".

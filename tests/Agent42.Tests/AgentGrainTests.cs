@@ -2096,8 +2096,8 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
     [Fact]
     public void GetCurrentLocation_ExposesNoParameters()
     {
-        var method = typeof(AgentGrain).GetMethod(
-            "GetCurrentLocationAsync", BindingFlags.Instance | BindingFlags.NonPublic);
+        var method = typeof(LocationTools).GetMethod(
+            "GetCurrentLocationAsync", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
         Assert.NotNull(method);
 
         // Nothing the model could put a host, a path, or an address into.
@@ -2105,8 +2105,11 @@ public sealed class AgentGrainTests(SharedClusterFixture fixture) : SharedCluste
             method!.GetParameters(),
             p => Assert.Equal(typeof(CancellationToken), p.ParameterType));
 
-        var function = AIFunctionFactory.Create(
-            method, RuntimeHelpers.GetUninitializedObject(typeof(AgentGrain)));
+        var function = new LocationTools(
+            new CoordinatesOnlyGeocoder(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
+            "u/c",
+            (_, _) => Task.FromResult(string.Empty)).Function();
 
         Assert.False(
             function.JsonSchema.TryGetProperty("properties", out var properties)
