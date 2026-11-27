@@ -10,6 +10,13 @@ public static partial class AgentApi
 {
     private static void MapMcpEndpoints(IEndpointRouteBuilder app)
     {
+        MapMcpServerListCreateGroup(app);
+        MapMcpServerUpdateDeleteGroup(app);
+        MapMcpBridgeTestOAuthGroup(app);
+    }
+
+    private static void MapMcpServerListCreateGroup(IEndpointRouteBuilder app)
+    {
         // The signed-in user's OWN configured MCP servers. Secrets are MASKED to hasHeaderValue flags: the
         // ciphertext never leaves the server, and the plaintext never existed here (the MCP analogue of
         // GET /api/providers, ADR 0018).
@@ -37,6 +44,10 @@ public static partial class AgentApi
             return Results.Json(Mask(synced, protector, bridgeKey));
         });
 
+    }
+
+    private static void MapMcpServerUpdateDeleteGroup(IEndpointRouteBuilder app)
+    {
         // Updates the server named by the route id. A BLANK secret means "keep the stored secret" (the
         // field is write-only in the UI) — ToStored maps blank to a null ciphertext, which the grain reads
         // as "keep".
@@ -78,6 +89,10 @@ public static partial class AgentApi
             return Results.NoContent();
         });
 
+    }
+
+    private static void MapMcpBridgeTestOAuthGroup(IEndpointRouteBuilder app)
+    {
         // Regenerates a local-bridge key (ADR 0076). A dedicated route rather than ADR 0022's regenerate-on-
         // upsert, because a Save also re-runs the auto-test; rotating a key should not need a Save. The old key
         // stops resolving (the grain deregisters it first) and the socket it opened is closed here, so a running
