@@ -11,8 +11,6 @@ using Microsoft.Extensions.AI;
 using OpenTelemetry.Instrumentation.AspNetCore;
 using Orleans.Dashboard;
 
-const string OtelSourceName = LiveTelemetryCaptureExtensions.OtelSourceName;
-
 var builder = WebApplication.CreateBuilder(args);
 
 // Who authenticates the caller (ADR 0145): Easy Auth in front of the app (the default; absent changes nothing and prod's
@@ -85,69 +83,9 @@ if (authMode != AuthMode.Entra)
 // and — kept for a future discovering provider — the ARM management plane. TenantId still binds it.
 var credential = new DefaultAzureCredential(AzureCredentialSettings.Options(builder.Configuration));
 
-// Model providers (ADR 0013, availability floor removed by ADR 0019). The app ships NO baseline chat
-// provider — Models:Providers is empty in appsettings — so chat is entirely the per-user overlay
-// (ADR 0018): a user with none configured gets an empty picker and a gated composer, and their grain
-// stays valid via the no-op NoModelChatClient. There is no operator default model; a user who picks a
-// third-party endpoint they added still sends the session — document excerpts (ADR 0008), image SAS URLs
-// (ADR 0004), the user's street address (ADR 0012) — outside the Entra tenant, which is why the pick is
-// explicit per conversation. The empty baseline's Default stays "".
-var modelOptions = builder.Configuration.GetSection(ModelProvidersOptions.SectionName)
-    .Get<ModelProvidersOptions>() ?? new ModelProvidersOptions();
-
-builder.Services.AddSingleton(new ArmClient(credential));
-
-// The rules — which providers are skipped, what a Foundry provider inherits, what a declared model
-// contributes — live in ModelProviderBuilder, not here: nothing in the test suite runs Program.cs.
-var models = ModelProviderBuilder.Build(modelOptions, builder.Configuration);
-
-// The BASELINE factory (the operator env providers). Now ships EMPTY (ADR 0019 removed the baseline
-// chat availability floor), so it hands out the no-op NoModelChatClient with DefaultModelId "". The agent
-// grain never consumes it directly — it goes through the per-user layer (ADR 0018), which uses this same
-// baseline as its input; an empty baseline means the per-user set is the ONLY source of chat providers.
-builder.Services.AddSingleton<IChatClientFactory>(sp => new MultiProviderChatClientFactory(
-    models.Providers,
-    modelOptions.Default,
-    OtelSourceName,
-    sp.GetRequiredService<ILogger<MultiProviderChatClientFactory>>(),
-    attachmentInliner: sp.GetService<AttachmentInliner>()));
-
-// Per-user providers (ADR 0018): the resolver merges the baseline with the signed-in user's overlay,
-// and the factory provider hands the agent grain a user-scoped factory (resolved on activation, cached
-// by the overlay's version). IProviderSecretProtector is registered further down (DI is lazy).
-builder.Services.AddSingleton<IUserProviderResolver>(sp => new UserProviderResolver(
-    sp.GetRequiredService<IGrainFactory>(),
-    sp.GetRequiredService<IProviderSecretProtector>(),
-    models,
-    modelOptions.Default));
-
-builder.Services.AddSingleton<IUserChatClientFactoryProvider>(sp => new UserChatClientFactoryProvider(
-    sp.GetRequiredService<IUserProviderResolver>(),
-    OtelSourceName,
-    sp.GetRequiredService<ILogger<MultiProviderChatClientFactory>>(),
-    // Registered only by local storage: turns an attachment reference URL into image bytes at request time.
-    sp.GetService<AttachmentInliner>()));
-
-builder.Services.AddSingleton<IModelCatalog>(sp => new CompositeModelCatalog(
-    [.. models.Discovering.Select(d => new AzureModelCatalog(
-        sp.GetRequiredService<ArmClient>(), d.Key, d.DisplayName, d.Settings, modelOptions.Default,
-        sp.GetRequiredService<ILogger<AzureModelCatalog>>()))],
-    models.DeclaredModels,
-    modelOptions.Default,
-    sp.GetRequiredService<ILogger<CompositeModelCatalog>>()));
-
-// Per-user model catalog (ADR 0018): /api/models is user-scoped, built from the same resolver as the
-// per-user factory so an added provider's models appear in the picker without a restart.
-builder.Services.AddSingleton<IUserModelCatalogProvider>(sp => new UserModelCatalogProvider(
-    sp.GetRequiredService<IUserProviderResolver>(),
-    sp.GetRequiredService<ArmClient>(),
-    sp.GetRequiredService<ILoggerFactory>(),
-    // Optional: registered by AddCopilotAgents. Lists a connected GitHub Copilot plan's models (ADR 0108).
-    sp.GetService<CopilotModelDirectory>()));
-
-// The Auto router (ADR 0137): a per-user Decision-1 client over the user's own Foundry resource. A port each host
-// registers (ADR 0105): DevHost registers a canned one, a test silo none (no router = no Auto).
-UserModelRouterProvider.AddModelRouter(builder.Services);
+// Model providers, the per-user resolver/factory/catalogs and the Auto router (ADR 0013, 0018, 0019, 0137); see
+// ModelProvidersRegistration. The returned setup is kept for the startup log of skipped providers below.
+var models = builder.Services.AddModelProviders(builder.Configuration, credential);
 
 // Durable storage (Storage:Provider, default azure): Cosmos + Blob today, or Postgres + a filesystem volume for
 // self-hosting. Registers the attachment, skill, document-index and chat-search ports, the Data Protection key
@@ -186,128 +124,13 @@ builder.Services.AddLocalBridge();
 // attach documents (the composer gates it) and RAG retrieval degrades to empty. The extractor, chunker and
 // ingestion service are host-invariant and come from AddAgent42Silo below.
 
-// Web tools (ADR 0011): search runs against the SearXNG sidecar in this Container App, reached over
-// localhost. Eager-validated so a missing endpoint fails at startup rather than in the middle of a
-// chat — same discipline as the embedding deployment above.
-var webSearchEndpoint = builder.Configuration["WebSearch:Endpoint"];
-if (string.IsNullOrWhiteSpace(webSearchEndpoint))
-{
-    throw new InvalidOperationException(
-        "WebSearch:Endpoint is not configured. Set it in appsettings.json, user secrets, or the " +
-        "WebSearch__Endpoint environment variable (the SearXNG sidecar, e.g. http://localhost:8888).");
-}
+// Web tools (ADR 0011, 0059, 0066): web_search + the SearXNG proxy + the guarded read_web_document fetcher. A missing
+// WebSearch:Endpoint fails here, at startup; see WebRegistration.
+builder.Services.AddWebTools(builder.Configuration);
 
-// Explicit timeouts on the web clients, and NO retry pipeline.
-//
-// AddServiceDefaults() applies AddStandardResilienceHandler() to EVERY HttpClient via
-// ConfigureHttpClientDefaults, so these named clients would silently inherit 3 retries plus the
-// handler's own generous per-attempt/total timeouts. Those are wrong here, and RemoveAllResilienceHandlers
-// is what actually opts out (setting HttpClient.Timeout alone does not — the pipeline still wraps it):
-//   * AgentGrain is NON-REENTRANT, so a slow search→read chain serializes the conversation's turn and
-//     delays the user's first token — and a retry multiplies that stall by four.
-// A web lookup that hasn't answered within these timeouts is not worth the stall; the tools degrade by
-// telling the model the lookup failed.
-// EXTEXP0001: RemoveAllResilienceHandlers is still marked experimental, but it is the only supported way
-// to opt a named client out of the pipeline ConfigureHttpClientDefaults applied to it. Suppressed
-// deliberately and narrowly: the alternative — inheriting retries that stall a non-reentrant grain — is a
-// latency regression, not a style preference. If this API is ever removed, the fix is to stop applying
-// the standard handler by default in ServiceDefaults, not to accept the retries.
-#pragma warning disable EXTEXP0001
-builder.Services.AddHttpClient(SearxngWebSearch.HttpClientName, http =>
-{
-    http.BaseAddress = new Uri(webSearchEndpoint);
-    http.Timeout = TimeSpan.FromSeconds(10);
-})
-    .RemoveAllResilienceHandlers();
-
-// read_web_document over an in-container fetch (ADR 0066). THIS ONE IS AN SSRF SINK, and the ConfigurePrimaryHttpMessageHandler further down is the entire control: our
-// container — which holds the managed identity Azure IMDS mints Cosmos/Storage/OpenAI tokens for — dials
-// a URL the MODEL chose, and (because /api/agent-run is on excludedPaths, ADR 0022) a URL an API key
-// holder can put in front of it with no browser session. PrivateAddressGuard runs at CONNECT time inside
-// GuardedDocumentFetcher.CreateHandler, so it sees the address actually dialled and covers every
-// redirect hop; a guard applied to the URL string instead would be TOCTOU-broken and blind to redirects.
-// A guard that is built, tested and never wired here is the highest-consequence way this feature can
-// ship green, which is why a source-text assertion pins that line.
-//
-// Explicit timeout + RemoveAllResilienceHandlers for the same reason as the clients above; note the
-// timeout is NOT the whole story here, because the fetcher reads with ResponseHeadersRead — see
-// WebDocumentLimits.DownloadDeadline, which bounds the body read the timeout stops covering.
-builder.Services.AddHttpClient(GuardedDocumentFetcher.HttpClientName, http =>
-{
-    http.Timeout = TimeSpan.FromSeconds(30);
-})
-    .ConfigurePrimaryHttpMessageHandler(
-        () => GuardedDocumentFetcher.CreateHandler(PrivateAddressGuard.IsPubliclyRoutable))
-    .RemoveAllResilienceHandlers();
-
-// The SearXNG web UI proxy (ADR 0059). A SECOND client against the same sidecar, deliberately: three
-// primary-handler defaults that suit web_search break a proxy, and all three are shared with
-// SearxngWebSearch and ConfigHealth's probe, so they cannot simply be changed on the existing client.
-//   * AllowAutoRedirect — the client would follow the 3xx itself, so the endpoint would never see a
-//     Location to rewrite; the redirect rules would be dead in production while green against a stub.
-//   * UseCookies — the pooled CookieContainer is shared across every consumer of the named client, so
-//     one user's SearXNG preference cookie would replay onto another user's request AND onto
-//     web_search's own queries, silently changing search behaviour.
-//   * AutomaticDecompression — without it the proxy forwards the browser's Accept-Encoding and emits
-//     gzip bytes labelled text/html.
-// RemoveAllResilienceHandlers for the same reason as the two clients above: a retried proxy request is
-// a stalled page, and the grain-latency argument applies to a user watching a browser tab too.
-builder.Services.AddHttpClient(SearxngProxy.HttpClientName, http =>
-{
-    http.BaseAddress = new Uri(webSearchEndpoint);
-    http.Timeout = TimeSpan.FromSeconds(10);
-})
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-    {
-        AllowAutoRedirect = false,
-        UseCookies = false,
-        AutomaticDecompression = System.Net.DecompressionMethods.All,
-    })
-    .RemoveAllResilienceHandlers();
-#pragma warning restore EXTEXP0001
-
-builder.Services.AddSingleton<IWebSearch>(sp => new SearxngWebSearch(
-    sp.GetRequiredService<IHttpClientFactory>().CreateClient(SearxngWebSearch.HttpClientName),
-    sp.GetRequiredService<ILogger<SearxngWebSearch>>()));
-
-// read_web_document (ADR 0066): the guarded fetcher over the client registered above. A mandatory AgentGrain
-// dependency (AddAgent42Silo checks it); its ingestion port is host-invariant and comes from AddAgent42Silo.
-builder.Services.AddSingleton<IWebDocumentFetcher>(sp => new GuardedDocumentFetcher(
-    sp.GetRequiredService<IHttpClientFactory>().CreateClient(GuardedDocumentFetcher.HttpClientName)));
-
-// User location (ADR 0012): reverse-geocoding for the get_current_location tool.
-//
-// Unlike the embedding deployment above, a missing key is NOT eager-validated into a startup throw —
-// it degrades. Without a key the tool still works and still reports the user's coordinates; it just
-// cannot name the street. That is why this branch exists rather than a null check at the call site.
-var googleApiKey = builder.Configuration["Geocoding:GoogleApiKey"];
-if (!string.IsNullOrWhiteSpace(googleApiKey))
-{
-    var geocodingBaseAddress =
-        builder.Configuration["Geocoding:BaseAddress"] ?? GoogleGeocoder.DefaultBaseAddress;
-
-    // Same explicit-timeout / no-retry discipline as the web clients above, and for the same reason:
-    // AgentGrain is non-reentrant, so a retried geocode multiplies the stall on the user's turn. 5s,
-    // because the user's turn is blocked on it — and a geocode that hasn't answered by then is not
-    // worth the wait (the tool degrades to coordinates).
-#pragma warning disable EXTEXP0001
-    builder.Services.AddHttpClient(GoogleGeocoder.HttpClientName, http =>
-    {
-        http.BaseAddress = new Uri(geocodingBaseAddress);
-        http.Timeout = TimeSpan.FromSeconds(5);
-    })
-        .RemoveAllResilienceHandlers();
-#pragma warning restore EXTEXP0001
-
-    builder.Services.AddSingleton<IGeocoder>(sp => new GoogleGeocoder(
-        sp.GetRequiredService<IHttpClientFactory>().CreateClient(GoogleGeocoder.HttpClientName),
-        googleApiKey,
-        sp.GetRequiredService<ILogger<GoogleGeocoder>>()));
-}
-else
-{
-    builder.Services.AddSingleton<IGeocoder, CoordinatesOnlyGeocoder>();
-}
+// User location (ADR 0012): reverse-geocoding for the get_current_location tool. A missing key degrades to
+// coordinates only; see GeocodingRegistration.
+builder.Services.AddGeocoding(builder.Configuration);
 
 // Long-term memory across conversations (ADR 0056): a Hindsight memory bank per user, recalled into the
 // agent's instructions before each model call and retained after it. Optional and off by default; see
@@ -340,58 +163,14 @@ builder.Services.AddCopilotAgents(builder.Configuration);
 builder.Services.AddAgentFleet(builder.Configuration);
 
 // Web Push notifications (ADR 0028): a push when an agent replies on an async path (a fired reminder or an
-// agent-run) while the user is away.
-//
-// Like the geocoding key above, a missing key is NOT eager-validated into a startup throw —
-// the VAPID private key is the ONLY secret and is OPTIONAL / not on the availability path (copy the
-// googleMapsApiKey shape, NOT searxngSecret): with no key the app starts, PushConfig reports
-// Enabled:false, GET /api/push/config returns enabled:false, the UI hides the toggle, and the no-op sender
-// does nothing. The public key + subject are non-secret (committed in appsettings.json); the browser fetches
-// the public key from GET /api/push/config. Enabled is the single source of the "push is on" fact — the same
-// signal that decides real-vs-null sender here and what the endpoint reports.
-var vapidPublicKey = builder.Configuration["Push:VapidPublicKey"] ?? "";
-var vapidPrivateKey = builder.Configuration["Push:VapidPrivateKey"] ?? "";
-var vapidSubject = builder.Configuration["Push:VapidSubject"] ?? "";
-// "Enabled" must mean "actually usable", so it requires BOTH the private key (the secret that lets us
-// send) AND the committed public key (which the browser needs to subscribe). Gating on the private key
-// alone would let a half-configured operator — secret set but public key not yet pasted — ship a visible
-// toggle whose Enable click calls pushManager.subscribe with an empty applicationServerKey and silently
-// fails. With either missing, push is simply off (the optional-secret degradation).
-var pushEnabled = !string.IsNullOrWhiteSpace(vapidPrivateKey) && !string.IsNullOrWhiteSpace(vapidPublicKey);
-
-builder.Services.AddSingleton(new PushConfig(pushEnabled, vapidPublicKey, vapidSubject));
+// agent-run) while the user is away. Optional, off without the VAPID key; see WebPushRegistration.
+builder.Services.AddWebPush(builder.Configuration);
 
 // The server-side MCP surface at /api/agent-mcp (ADR 0070) — stored agents exposed as a tool to an
 // external MCP client, the inverse direction of the client-side servers above. Deliberately not part of
 // MapAgentApi: MapMcp throws without these services, and a dependency one host lacks breaks routing for
 // every endpoint that host maps. See AgentMcpServerRegistration.
 builder.Services.AddAgentMcpServer();
-
-if (pushEnabled)
-{
-    // Same explicit-timeout / no-retry discipline as the web + geocoding clients above, and for the same
-    // reason: the send runs inside a NON-REENTRANT AgentGrain activation, so a retried send to a dead push
-    // endpoint would multiply the stall on the grain. The timeout matches the sender's whole-fan-out budget;
-    // RemoveAllResilienceHandlers is what actually opts out of the inherited 3-retry pipeline.
-#pragma warning disable EXTEXP0001
-    builder.Services.AddHttpClient(WebPushClientAdapter.HttpClientName, http =>
-    {
-        http.Timeout = WebPushNotificationSender.SendBudget;
-    })
-        .RemoveAllResilienceHandlers();
-#pragma warning restore EXTEXP0001
-
-    builder.Services.AddSingleton<IWebPushClient>(sp => new WebPushClientAdapter(
-        sp.GetRequiredService<IHttpClientFactory>().CreateClient(WebPushClientAdapter.HttpClientName),
-        vapidSubject, vapidPublicKey, vapidPrivateKey));
-    builder.Services.AddSingleton<IPushNotificationSender, WebPushNotificationSender>();
-    // The Settings "Send test" path: one device, reports its result (resolved optionally by /api/push/test).
-    builder.Services.AddSingleton<PushTestNotifier>();
-}
-else
-{
-    builder.Services.AddSingleton<IPushNotificationSender, NullPushNotificationSender>();
-}
 
 // The registrations every host shares (ADR 0105), AFTER every port above: the endpoint invariants (the secret
 // protectors on the Data Protection ring set up above, the OAuth client), then the grain-side ones, which also

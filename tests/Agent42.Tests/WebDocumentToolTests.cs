@@ -434,73 +434,8 @@ public sealed class WebDocumentToolTests(SharedClusterFixture fixture) : SharedC
             "fetched from the web", await InstructionsOnNextTurnAsync(agent), StringComparison.Ordinal);
     }
 
-    // ---- Source-text guards over the composition root ----
-
-    // AC19: the guard is WIRED. Class-level tests cannot see Program.cs, so a PrivateAddressGuard that is
-    // built, tested and never installed is the single highest-consequence way this feature can ship
-    // green — the tool would dial any address the model named, from the container that holds the managed
-    // identity. The only thing that can catch that is an assertion over the composition root itself.
-    [Fact]
-    public void ProgramCs_WiresTheGuardIntoTheDocumentClientsPrimaryHandler()
-    {
-        var program = ProgramSource();
-        var registration = ClientRegistration(program);
-
-        Assert.Contains("ConfigurePrimaryHttpMessageHandler", registration, StringComparison.Ordinal);
-        Assert.Contains("GuardedDocumentFetcher.CreateHandler", registration, StringComparison.Ordinal);
-        Assert.Contains("PrivateAddressGuard.IsPubliclyRoutable", registration, StringComparison.Ordinal);
-    }
-
-    // AC18: the named client opts out of the resilience pipeline and sets its own timeout. AddServiceDefaults
-    // applies AddStandardResilienceHandler to EVERY named client, so 3 retries are inherited silently, and
-    // AgentGrain is non-reentrant — a retried document download multiplies the stall on the user's turn by
-    // four. Setting HttpClient.Timeout does not opt out; RemoveAllResilienceHandlers does.
-    //
-    // A source-text assertion because the shipped pipeline is assembled in Program.cs and no unit test
-    // constructs it — the gotcha says so explicitly.
-    [Fact]
-    public void ProgramCs_DocumentClientRemovesResilienceAndSetsATimeout()
-    {
-        var registration = ClientRegistration(ProgramSource());
-
-        Assert.Contains("RemoveAllResilienceHandlers", registration, StringComparison.Ordinal);
-        Assert.Contains("http.Timeout", registration, StringComparison.Ordinal);
-    }
-
-    // The GuardedDocumentFetcher.HttpClientName registration block: from its AddHttpClient up to the next
-    // registration, so a NEIGHBOURING client's settings cannot satisfy an assertion about this one. The
-    // boundary is the next `builder.Services.` rather than the next `;` — the block spans several
-    // statements (the configure lambda's own `http.Timeout = …;` included).
-    private static string ClientRegistration(string program)
-    {
-        var start = program.IndexOf(
-            "AddHttpClient(GuardedDocumentFetcher.HttpClientName", StringComparison.Ordinal);
-        Assert.True(start >= 0, "Program.cs no longer registers a named client for the document fetcher.");
-
-        var next = program.IndexOf("builder.Services.", start, StringComparison.Ordinal);
-        var end = next > start ? next : program.Length;
-
-        return program[start..end];
-    }
-
-    private static string ProgramSource()
-    {
-        var path = Path.Combine(RepoRoot(), "src", "Agent42.Backend", "Program.cs");
-        Assert.True(File.Exists(path), $"Program.cs not found at {path}");
-        return File.ReadAllText(path);
-    }
-
-    private static string RepoRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Agent42.slnx")))
-        {
-            dir = dir.Parent;
-        }
-
-        Assert.NotNull(dir);
-        return dir!.FullName;
-    }
+    // The composition-root wiring of the document client (guard on the primary handler, no resilience pipeline, a
+    // timeout) is pinned on the resolved handler chain in WebRegistrationTests.
 
     // The instructions the model was handed on the NEXT turn, via the fake's [sys:…] echo. A plain "hi"
     // triggers no tool, so this observes only what BuildAgent put in front of the model.

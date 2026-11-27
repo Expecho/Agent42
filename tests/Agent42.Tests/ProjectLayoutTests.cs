@@ -778,9 +778,9 @@ public sealed class ProjectLayoutTests
     // The attachment store is a host-varying port. Backend registers it through the storage provider switch
     // (Storage:Provider, Azure Blob or local files), so its token is the switch call; DevHost registers the in-memory
     // store directly. Both must still come before AddAgent42Silo().
-    [InlineData("src/Agent42.Backend/Program.cs", "AddStorageProvider(")]
-    [InlineData("tools/Agent42.DevHost/Program.cs", "AddSingleton<IAttachmentStore")]
-    public void Hosts_CallAddAgent42Silo(string relativePath, string attachmentStorePort)
+    [InlineData("src/Agent42.Backend/Program.cs", "AddStorageProvider(", "AddWebPush(")]
+    [InlineData("tools/Agent42.DevHost/Program.cs", "AddSingleton<IAttachmentStore", "AddSingleton<IPushNotificationSender")]
+    public void Hosts_CallAddAgent42Silo(string relativePath, string attachmentStorePort, string pushSenderPort)
     {
         var program = StrippedSource(
             Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar)));
@@ -791,7 +791,7 @@ public sealed class ProjectLayoutTests
         Assert.True(silo > api, $"{relativePath} must call AddAgent42Silo() after AddAgent42Api().");
         Assert.True(silo < program.IndexOf("builder.UseOrleans(", StringComparison.Ordinal), $"{relativePath} must call AddAgent42Silo() before UseOrleans.");
 
-        foreach (var port in new[] { "AddSingleton<IPushNotificationSender", attachmentStorePort })
+        foreach (var port in new[] { pushSenderPort, attachmentStorePort })
         {
             var last = program.LastIndexOf(port, StringComparison.Ordinal);
             Assert.True(last >= 0 && last < silo, $"{relativePath}: {port} must be registered before AddAgent42Silo().");

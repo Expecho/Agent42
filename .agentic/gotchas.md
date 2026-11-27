@@ -334,9 +334,9 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
     that actually matters. It bounds *where inside the network* we can be made to connect, never *whose URL* we
     connect to.
 - **Evidence:** `src/Agent42.Backend/Web/GuardedDocumentFetcher.cs` +
-  `src/Agent42.Backend/Web/PrivateAddressGuard.cs`, `src/Agent42.Backend/Program.cs` (the document client
-  registration), `tests/Agent42.Tests/WebDocumentToolTests.cs`
-  (`ProgramCs_WiresTheGuardIntoTheDocumentClientsPrimaryHandler`),
+  `src/Agent42.Backend/Web/PrivateAddressGuard.cs`, `src/Agent42.Backend/Web/WebRegistration.cs` (the document client
+  registration), `tests/Agent42.Tests/WebRegistrationTests.cs`
+  (`TheDocumentClient_RefusesALoopbackAddress_AtConnectTime`),
   `.agentic/decisions/0066-in-container-document-fetch-for-rag.md`,
   `.agentic/decisions/0125-remove-fetch-web-page-and-context-dev.md`
 - **Verified:** 2026-11-24
@@ -443,8 +443,9 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   actually does (the chat adapters spell it `.WithoutInheritedRetry()`, `src/Agent42.Backend/ChatGateway/ChatPlatformHttpClient.cs`, which calls it; `EveryNamedHttpClient_RemovesTheInheritedRetryPipeline` accepts either). This bites the web tools (ADR 0011/0066): `AgentGrain` is **non-reentrant**, so a
   retried call multiplies the stall on a conversation's turn by four. (A second reason applies to the document
   fetch client: a `BlockedAddressException` from the SSRF guard surfaces as a transient `HttpRequestException`
-  and would be re-dialled.) Note the shipped pipeline (resilience + service discovery) is assembled in `Program.cs`
-  and is not what the unit tests construct, so no test will catch this for you.
+  and would be re-dialled.) Note the shipped pipeline (resilience + service discovery) is assembled by `AddServiceDefaults` in the host
+  and is not what the unit tests construct. The web clients are pinned on the resolved handler chain by
+  `WebRegistrationTests`; any other named client is caught only by `EveryNamedHttpClient_RemovesTheInheritedRetryPipeline`.
   **One extra trap on the document client (ADR 0066):** it reads with
   `HttpCompletionOption.ResponseHeadersRead` so it can stop at the size cap instead of buffering first,
   and under that option `HttpClient.Timeout` **stops applying once the headers arrive**. So the explicit
@@ -453,7 +454,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   download) is what actually bounds it. Do not "simplify" it away as a duplicate of the timeout.
 - **Enforced by:** `ProjectLayoutTests.EveryNamedHttpClient_RemovesTheInheritedRetryPipeline` (every `services.AddHttpClient` in `src/`)
 - **Evidence:** `src/Agent42.ServiceDefaults/Extensions.cs` (`ConfigureHttpClientDefaults`),
-  `src/Agent42.Backend/Program.cs` (`RemoveAllResilienceHandlers` on every named client — SearXNG
+  `src/Agent42.Backend/Web/WebRegistration.cs`, `src/Agent42.Backend/Location/GeocodingRegistration.cs`, `src/Agent42.Backend/Push/WebPushRegistration.cs` (`RemoveAllResilienceHandlers` on every named client — SearXNG
   search, the SearXNG UI proxy (ADR 0059), the geocoding
   client (ADR 0012), the Web Push client (ADR 0028) and the document fetch client (ADR 0066); every new
   named client needs it), `src/Agent42.Agents/Documents/WebDocumentLimits.cs` (`DownloadDeadline`),
@@ -925,7 +926,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   chat path already does its `api-key`-header + `/openai/v1` handling (ADR 0014/0017) — not a config tweak.
 - **Evidence:** `src/Agent42.Backend/ImageGeneration/OpenAIImageGenerator.cs` (no `ResponseFormat`; `ResolveBytesAsync`
   bytes-or-URL fallback; the SDK `ImageClient` calls),
-  `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.OpenAICompatible` builds the client image gen reuses),
+  `src/Agent42.Backend/Models/ChatClientFactory.OpenAICompatible.cs` (`Provider.OpenAICompatible` builds the client image gen reuses),
   `.agentic/decisions/0020-image-generation-model-capability.md` (Foundry image gen out of scope)
 - **Verified:** 2026-11-24 (audit 2026-11-24: the repo now pins OpenAI 2.15.0; the no-response_format behaviour still holds in OpenAIImageGenerator.cs, the wire URI was not re-captured)
 
@@ -1146,7 +1147,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   blanket-suppress. **Auth note (ADR 0017):** that `AuthenticationPolicy` ctor argument is now the
   `api-key`-header policy carrying the Azure OpenAI key, not the deleted managed-identity bearer bridge —
   see the "Azure's `/openai/v1` authenticates the resource key via the `api-key` header" gotcha below.
-- **Evidence:** `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.Foundry`, the `UseResponses`
+- **Evidence:** `src/Agent42.Backend/Models/ChatClientFactory.Foundry.cs` (`Provider.Foundry`, the `UseResponses`
   branch), `.agentic/decisions/0014-responses-api-stateless-mode.md`, `.agentic/decisions/0017-foundry-provider-api-key-auth.md`
 - **Verified:** 2026-11-24
 
@@ -1183,7 +1184,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   (`ModelCatalog.cs`, `if (models.Count == 0 && !string.IsNullOrEmpty(defaultModelId))`), so a default
   missing from a non-empty declared list silently **vanishes from the picker**, and with discovery off a
   wrong default 404s every turn.
-- **Evidence:** `src/Agent42.Backend/Models/ChatClientFactory.cs` (`ApiKeyHeaderPolicy`, `Provider.Foundry`),
+- **Evidence:** `src/Agent42.Backend/Models/ChatClientFactory.Foundry.cs` (`ApiKeyHeaderPolicy`, `Provider.Foundry`),
   `src/Agent42.Backend/Models/ModelProviderBuilder.cs` (fatal-key throw), `src/Agent42.Backend/Models/ModelProviderOptions.cs`
   (`ProviderSettings.ResolveFoundry` — the dormant `AzureOpenAI:*` inheritance), `src/Agent42.Backend/appsettings.json`,
   `.agentic/decisions/0017-foundry-provider-api-key-auth.md`. (NOTE: ADR 0030 removed the eager `AzureOpenAI:ApiKey`
@@ -1213,7 +1214,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   **404s on `/embeddings`**, while `{resource}/openai/v1/embeddings` answers 200. So
   `Provider.FoundryEmbeddingsEndpoint` drops the `/api/projects/{name}` suffix before appending
   `/openai/v1`. Don't "simplify" it to reuse the chat client's base URL.
-- **Evidence:** `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.Foundry`, the non-`UseResponses`
+- **Evidence:** `src/Agent42.Backend/Models/ChatClientFactory.Foundry.cs` (`Provider.Foundry`, the non-`UseResponses`
   branch, `Provider.FoundryEmbeddingsEndpoint`), `tests/Agent42.Tests/ModelProviderTests.cs` (`FoundryChatProvider_UsesV1Surface_NoApiVersion`,
   `ResponsesProvider_WiresResponsesEndpoint`, `FoundryEmbeddings_UseV1Surface_AtResourceRoot`),
   `.agentic/decisions/0033-foundry-chat-over-openai-v1.md`
@@ -1412,7 +1413,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   context, never throw**: guard on `DefaultEmbeddingModelId == ""` before embedding, because
   `NoEmbeddingGenerator.GenerateAsync` throws and the retrieval path must not reach it. (Upload without one is
   rejected instead.) Rationale: ADR 0030, 'Notes moved from gotchas.md'.
-- **Evidence:** `src/Agent42.Agents/Models/IChatClientFactory.cs` (`GetEmbeddingGenerator`/`DefaultEmbeddingModelId`), `src/Agent42.Backend/Models/ChatClientFactory.cs` (Foundry/OpenAICompatible embedding funcs), `src/Agent42.Agents/Documents/NoEmbeddingGenerator.cs`, `src/Agent42.Backend/Documents/DocumentIngestionService.cs`, `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`SearchDocumentContextAsync` empty-id guard), `src/Agent42.Backend/Models/UserProviderResolver.cs` (`EmbeddingDefaultModelId`), `.agentic/decisions/0030-user-configured-embedding-model.md`
+- **Evidence:** `src/Agent42.Agents/Models/IChatClientFactory.cs` (`GetEmbeddingGenerator`/`DefaultEmbeddingModelId`), `src/Agent42.Backend/Models/ChatClientFactory.Foundry.cs` + `src/Agent42.Backend/Models/ChatClientFactory.OpenAICompatible.cs` (the embedding funcs), `src/Agent42.Agents/Documents/NoEmbeddingGenerator.cs`, `src/Agent42.Backend/Documents/DocumentIngestionService.cs`, `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`SearchDocumentContextAsync` empty-id guard), `src/Agent42.Backend/Models/UserProviderResolver.cs` (`EmbeddingDefaultModelId`), `.agentic/decisions/0030-user-configured-embedding-model.md`
 - **Verified:** 2026-11-24
 
 ### Cosmos vector search is prod-only: capability + pre-created container + no create-on-use
@@ -2884,7 +2885,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   the pin only against a released `OpenAI` whose `PropagateGet` bounds-checks, with that test green.
 - **Evidence:** `Directory.Packages.props` (the pin + its note), `tests/Agent42.Tests/ResponsesToolMappingTests.cs`,
   `tests/Agent42.Tests/StreamingEmptyChoicesTests.cs`,
-  `src/Agent42.Backend/Models/ChatClientFactory.cs` (`Provider.OpenAICompatible` — the affected path)
+  `src/Agent42.Backend/Models/ChatClientFactory.OpenAICompatible.cs` (`Provider.OpenAICompatible` — the affected path)
 - **Verified:** 2026-11-24 (audit 2026-11-21: the OpenAI 2.12.0 pin and restore guard in the body are historical (lifted, see Status); the run-StreamingEmptyChoicesTests-before-a-bump rule still holds) (2.14.0 green; pin lifted; M.E.AI.OpenAI 10.10.1 for the Responses tool mapping)
 
 ### The memory provider is built at ACTIVATION but the incognito gate is per-TURN — it must be a delegate
@@ -3184,7 +3185,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   forwarded as undeclared encoded bytes. Hence a second registration, `searxng-ui`, against the same address — and it needs
   `RemoveAllResilienceHandlers()` for the same reason every other client here does (the named-client
   retry-inheritance trap).
-- **Evidence:** `src/Agent42.Backend/Program.cs` (the `SearxngProxy.HttpClientName` registration),
+- **Evidence:** `src/Agent42.Backend/Web/WebRegistration.cs` (the `SearxngProxy.HttpClientName` registration),
   `tests/Agent42.Tests/SearxngProxyFixture.cs` (the stub is installed as the PRIMARY handler, deliberately)
 - **Verified:** 2026-11-24
 

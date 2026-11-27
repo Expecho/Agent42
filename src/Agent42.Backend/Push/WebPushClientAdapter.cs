@@ -8,7 +8,7 @@ namespace Agent42.Backend;
 /// references the library — the seam keeps the package choice isolated (see <see cref="IWebPushClient"/>).
 ///
 /// <para>The <see cref="HttpClient"/> is a named client with an explicit timeout and <b>no</b> resilience
-/// pipeline (its registration in Program.cs calls <c>RemoveAllResilienceHandlers()</c>) — the same
+/// pipeline (its registration in WebPushRegistration calls <c>RemoveAllResilienceHandlers()</c>) — the same
 /// discipline as <see cref="GoogleGeocoder"/>'s client, and for the same reason: the send runs inside a
 /// <b>non-reentrant</b> <c>AgentGrain</c> activation (gotcha: every Backend named client silently inherits
 /// <c>AddServiceDefaults</c>' 3-retry pipeline), so a retried send to a dead endpoint would quadruple the

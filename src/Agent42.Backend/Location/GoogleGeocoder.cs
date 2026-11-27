@@ -28,7 +28,7 @@ namespace Agent42.Backend;
 /// (ADR 0010), so the span would otherwise join this named human to their exact position.</para>
 ///
 /// The <see cref="HttpClient"/> is a named client with an explicit timeout and <b>no</b> resilience
-/// pipeline (see Program.cs): <c>AgentGrain</c> is non-reentrant, so a retried geocode multiplies the
+/// pipeline (see GeocodingRegistration): <c>AgentGrain</c> is non-reentrant, so a retried geocode multiplies the
 /// stall on the user's turn.
 /// </summary>
 public sealed class GoogleGeocoder(HttpClient httpClient, string apiKey, ILogger<GoogleGeocoder> logger)
