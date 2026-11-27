@@ -2221,7 +2221,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `IEmbeddingGenerator`). **(3)** a SearXNG **403 is a HEALTHY sidecar** (JSON API off), not an auth
   failure. A test-only `ConfigHealthProbeSet` (which `ProbeAsync` prefers over its `FromServices` factory)
   is the seam that proves a static call runs **zero** probes.
-- **Evidence:** `src/Agent42.Backend/Configuration/ConfigHealth.cs` (`ProbeAsync`'s catch; `ConfigHealthProbeSet.
+- **Evidence:** `src/Agent42.Backend/Configuration/ConfigHealthProbes.cs` (`ProbeAsync`'s catch; `ConfigHealthProbeSet.
   FromServices` — geocoding-only-when-keyed, `ProbeSearxngAsync` 403→ok, no body in any message),
   `src/Agent42.Backend/Configuration/AgentApi.Configuration.cs` (the `GET /api/config-health` endpoint — `IServiceProvider`, not
   `IHttpClientFactory`), `tests/Agent42.Tests/ConfigHealthTests.cs` (`FailingProbe_NeverLeaksSecret`,
@@ -4966,8 +4966,8 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   append twice). Writing a stored "after" text would wipe the user's edits made since the dream ran. Compare with `\n` line
   endings (`FleetPromptProposals.Normalize`): a shipped default is a C# raw string and carries the source file's CRLF. Approve
   holds the per-user lessons lock across both blobs; `prompts.json` itself is unlocked, so the prompt editor can still race it.
-- **Evidence:** `src/Agent42.Backend/Fleet/FleetPromptProposals.cs` (`Apply`), `src/Agent42.Backend/Fleet/FleetLessonService.cs`
-  (`ApproveProposalAsync`, `WithUserLockAsync`), `tests/Agent42.Tests/FleetPromptProposalsTests.cs`
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetPromptProposals.cs` (`Apply`), `src/Agent42.Backend/Fleet/FleetProposalWorkflow.cs`
+  (`ApproveProposalAsync`), `src/Agent42.Backend/Fleet/FleetLessonStore.cs` (`WithUserLockAsync`), `tests/Agent42.Tests/FleetPromptProposalsTests.cs`
   (`Apply_ReappliesOnTheCurrentText_OutdatedWhenFindIsGone_AppendIdempotent`), `tests/Agent42.Tests/FleetLessonServiceTests.cs`
   (`Approve_Twice_SecondIsAConflict_PromptChangedOnce`)
 - **Verified:** 2026-11-24
@@ -4984,7 +4984,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   silently replaces the shipped skill, and `websearch`'s SKILL.md holds the ADR 0011 mitigation. Size is the whole `SKILL.md`
   against `SkillToolLimits.MaxSkillBodyLength`, because that is what `load_skill` returns. An edit installs with `autoEnable: false`
   so a skill the user switched off stays off; a create installs with `true`.
-- **Evidence:** `src/Agent42.Backend/Fleet/FleetSkillProposals.cs`, `src/Agent42.Backend/Fleet/FleetLessonService.Skills.cs`,
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetSkillProposals.cs`, `src/Agent42.Backend/Fleet/FleetProposalWorkflow.Skills.cs`,
   `tests/Agent42.Tests/FleetSkillProposalsTests.cs` (`Apply_OnlyEditsTheBody`, `BuildMarkdown_RoundTripsThroughNormalize`,
   `Validate_Description_RefusesYamlAndInjection`), `tests/Agent42.Tests/FleetSkillProposalServiceTests.cs` (`ApproveSkillEdit_*`)
 - **Verified:** 2026-11-26

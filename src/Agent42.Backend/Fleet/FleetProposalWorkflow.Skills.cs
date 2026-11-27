@@ -7,7 +7,7 @@ namespace Agent42.Backend;
 /// proposal. Approve re-applies an edit to the CURRENT <c>SKILL.md</c> and installs through <see cref="UserSkillInstaller"/>, the
 /// one install path the upload endpoint also uses. The whole approve runs under the user's lessons lock, like a prompt approve.
 /// </summary>
-public sealed partial class FleetLessonService
+internal sealed partial class FleetProposalWorkflow
 {
     private static readonly FleetProposalDecision SkillsUnavailable =
         new(FleetProposalOutcome.Conflict, "Skills are not available on this deployment.");
@@ -38,7 +38,7 @@ public sealed partial class FleetLessonService
     /// <summary>Approves a pending skill proposal: an edit is re-applied to the skill's current <c>SKILL.md</c> and installed
     /// without re-enabling it; a creation is installed and turned on. A proposal that no longer applies is marked outdated.</summary>
     public Task<FleetProposalDecision> ApproveSkillProposalAsync(string userId, string proposalId, CancellationToken cancellationToken = default)
-        => WithUserLockAsync(userId, async () =>
+        => lessonStore.WithUserLockAsync(userId, async () =>
         {
             if (!SkillsAvailable)
             {
@@ -65,7 +65,7 @@ public sealed partial class FleetLessonService
 
     /// <summary>Dismisses a pending skill proposal; it stays as a tombstone so the same change is not proposed again.</summary>
     public Task<FleetProposalDecision> DismissSkillProposalAsync(string userId, string proposalId, CancellationToken cancellationToken = default)
-        => WithUserLockAsync(userId, async () =>
+        => lessonStore.WithUserLockAsync(userId, async () =>
         {
             var document = await store.GetLessonsAsync(userId, cancellationToken);
             if (SkillPendingProblem(document, proposalId) is { } problem)
@@ -152,7 +152,7 @@ public sealed partial class FleetLessonService
 
     private FleetLessonsDocument DecideSkill(FleetLessonsDocument document, string proposalId, string status)
     {
-        var now = _time.GetUtcNow();
+        var now = time.GetUtcNow();
         return document with
         {
             SkillProposals = [.. document.SkillProposals.Select(p => p.Id == proposalId ? p with { Status = status, DecidedAt = now } : p)],

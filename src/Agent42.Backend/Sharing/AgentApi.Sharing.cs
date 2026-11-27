@@ -11,6 +11,14 @@ public static partial class AgentApi
 {
     private static void MapSharingEndpoints(IEndpointRouteBuilder app)
     {
+        MapShareOwnerGroup(app);
+        MapSharedConversationGroup(app);
+        MapSharedArtifactsGroup(app);
+    }
+
+    // The owner's routes (behind Easy Auth): read, mint and revoke the link.
+    private static void MapShareOwnerGroup(IEndpointRouteBuilder app)
+    {
         // The share link for this conversation, or { url: null } when it is not shared. Behind Easy Auth,
         // user-scoped by GetUserId — only the owner ever sees or manages their own links.
         app.MapGet("/api/conversations/{conversationId}/share", async (string conversationId, IGrainFactory grains, HttpContext http) =>
@@ -36,6 +44,11 @@ public static partial class AgentApi
             return Results.NoContent();
         });
 
+    }
+
+    // The public read-only conversation view and its attachments (excluded from Easy Auth, so self-enforcing).
+    private static void MapSharedConversationGroup(IEndpointRouteBuilder app)
+    {
         // ————— public read-only share view (ADR 0035) —————
         //
         // Easy Auth EXCLUDES the /api/share/* paths (container-app.bicep globalValidation.excludedPaths — the
@@ -94,6 +107,11 @@ public static partial class AgentApi
             return content is null ? Results.NotFound() : Results.File(content.Bytes, content.MediaType);
         });
 
+    }
+
+    // The public artifact routes of a shared conversation (same rules as the group above).
+    private static void MapSharedArtifactsGroup(IEndpointRouteBuilder app)
+    {
         // The shared conversation's artifacts (every artifact and version in its state, consistent with a LIVE
         // view: later turns appear too). Token-scoped analogues of the owner routes in AgentApi.Artifacts.cs, and
         // the same rules as the two routes above: owner from the directory, never GetUserId, fail closed to 404.
