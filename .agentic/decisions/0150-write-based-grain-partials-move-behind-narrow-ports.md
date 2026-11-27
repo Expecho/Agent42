@@ -26,6 +26,12 @@ state area. The grain stays the only owner of `_state`, `_session` and `_agent`.
 the one normalization, shared with the web-document ingest. `WebTools` holds `web_search` and the three feeders. The
 allow-list is consulted exactly as before (whole normalized URL, user and seed lists separate; ADR 0011/0066/0067).
 
+**Step 2: `WebDocumentList` + `WebDocumentTool`.** `WebDocumentList` is the only writer of `WebDocumentNames` and
+`WebDocumentUrls` (contains-url, a paired append-and-trim, count, clear), so the two lists stay index-aligned. `WebDocumentTool`
+holds `read_web_document`; it gets the chat-client factory as a `Func` (the grain reassigns it) and the grain's own
+`WriteStateAsync` as a named `persistNow` (the one write it needs, made before the excerpts are ranked, as before). The
+deferred agent rebuild (`RebuildForIngestedWebDocumentAsync`) stays a grain partial because it swaps `_agent` and `_session`.
+
 **The call sites are the control.** A fired reminder never feeds the list because `ReceiveReminder` calls the agent directly
 and never reaches `BuildUserTurnAsync`; there is deliberately no `TurnContext` check or flag in the port, because every turn
 kind that does reach it has an open context. Agent-run and fleet-result turns feeding the list is existing behaviour, kept.

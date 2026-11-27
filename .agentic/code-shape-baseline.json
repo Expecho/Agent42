@@ -1,26 +1,26 @@
 {
- "measuredAt": "ff39cb6",
+ "measuredAt": "910c1b4",
  "metric": "loc = non-blank non-comment lines from the method name line to its closing line; see code-shape.mjs",
  "floor": "methods loc>=40 or params>=5; classes loc>=400 or ctorParams>=5",
  "sections": {
   "src": {
    "summary": {
-    "files": 539,
-    "methods": 2912,
+    "files": 541,
+    "methods": 2915,
     "methodsOver60": 5,
     "methodsOver80": 1,
     "methodsOver100": 0,
     "methodsWith7PlusParams": 28,
-    "classes": 660,
+    "classes": 662,
     "classesOver500Loc": 4,
-    "classesWithCtor7Plus": 20
+    "classesWithCtor7Plus": 21
    },
    "methods": [
     {
      "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.ChatTurnAsync(string,string?,IReadOnlyList<AttachmentRef>?,TurnContext,bool)",
      "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
      "name": "Agent42.Agents.AgentGrain.ChatTurnAsync",
-     "line": 613,
+     "line": 619,
      "loc": 84,
      "span": 158,
      "params": 5
@@ -80,10 +80,10 @@
      "params": 4
     },
     {
-     "key": "src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs::Agent42.Agents.AgentGrain.ReadWebDocumentAsync(string,string)",
-     "file": "src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs",
-     "name": "Agent42.Agents.AgentGrain.ReadWebDocumentAsync",
-     "line": 46,
+     "key": "src/Agent42.Agents/Documents/WebDocumentTool.cs::Agent42.Agents.WebDocumentTool.ReadWebDocumentAsync(string,string)",
+     "file": "src/Agent42.Agents/Documents/WebDocumentTool.cs",
+     "name": "Agent42.Agents.WebDocumentTool.ReadWebDocumentAsync",
+     "line": 61,
      "loc": 60,
      "span": 79,
      "params": 2
@@ -137,7 +137,7 @@
      "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.StreamModelReplyAsync(ChatMessage,StringBuilder,TurnTokenTotals,TurnOutcome,ResearchRun?,TurnContext,CancellationToken)",
      "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
      "name": "Agent42.Agents.AgentGrain.StreamModelReplyAsync",
-     "line": 900,
+     "line": 906,
      "loc": 55,
      "span": 72,
      "params": 7
@@ -224,6 +224,15 @@
      "params": 3
     },
     {
+     "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.OnActivateAsync(CancellationToken)",
+     "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
+     "name": "Agent42.Agents.AgentGrain.OnActivateAsync",
+     "line": 281,
+     "loc": 49,
+     "span": 81,
+     "params": 1
+    },
+    {
      "key": "src/Agent42.Backend/Fleet/AgentApi.FleetSharing.cs::Agent42.Backend.AgentApi.MapFleetSharingEndpoints(IEndpointRouteBuilder)",
      "file": "src/Agent42.Backend/Fleet/AgentApi.FleetSharing.cs",
      "name": "Agent42.Backend.AgentApi.MapFleetSharingEndpoints",
@@ -285,15 +294,6 @@
      "loc": 45,
      "span": 47,
      "params": 2
-    },
-    {
-     "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.OnActivateAsync(CancellationToken)",
-     "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
-     "name": "Agent42.Agents.AgentGrain.OnActivateAsync",
-     "line": 279,
-     "loc": 45,
-     "span": 77,
-     "params": 1
     },
     {
      "key": "src/Agent42.Backend/Models/ModelCatalog.cs::Agent42.Backend.AzureModelCatalog.GetAsync(CancellationToken)",
@@ -434,7 +434,7 @@
      "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.AgentGrain(IPersistentState<AgentGrainState>,IUserChatClientFactoryProvider,IUserMcpToolProvider,IUserSkillProvider,IAttachmentStore,IDocumentIndex,IChatSearchIndex,IWebSearch,IWebDocumentFetcher,IDocumentIngestor,IGeocoder,HindsightIntegration,IPushNotificationSender,IChatDeliverySender,IFleetLauncher,ILogger<AgentGrain>,TimeProvider?,ClientToolTimeouts?,IUserModelRouterProvider?)",
      "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
      "name": "Agent42.Agents.AgentGrain.AgentGrain",
-     "line": 237,
+     "line": 239,
      "loc": 41,
      "span": 41,
      "params": 19
@@ -506,7 +506,7 @@
      "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.BuildUserTurnAsync(string,IReadOnlyList<AttachmentRef>?,bool)",
      "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
      "name": "Agent42.Agents.AgentGrain.BuildUserTurnAsync",
-     "line": 1390,
+     "line": 1396,
      "loc": 40,
      "span": 65,
      "params": 3
@@ -929,7 +929,7 @@
      "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.ChatAsync(string,string?,IReadOnlyList<AttachmentRef>?,bool,bool,IReadOnlyList<string>?,bool,string?)",
      "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
      "name": "Agent42.Agents.AgentGrain.ChatAsync",
-     "line": 444,
+     "line": 450,
      "loc": 21,
      "span": 30,
      "params": 8
@@ -1109,7 +1109,7 @@
      "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.ChatCoreAsync(string,string?,IReadOnlyList<AttachmentRef>?,TurnContext,bool)",
      "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
      "name": "Agent42.Agents.AgentGrain.ChatCoreAsync",
-     "line": 595,
+     "line": 601,
      "loc": 17,
      "span": 17,
      "params": 5
@@ -1244,7 +1244,7 @@
      "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.TrailingEventsAsync(string,StringBuilder,TurnOutcome,McpReauthTurnObserver,bool)",
      "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
      "name": "Agent42.Agents.AgentGrain.TrailingEventsAsync",
-     "line": 843,
+     "line": 849,
      "loc": 14,
      "span": 16,
      "params": 5
@@ -1541,7 +1541,7 @@
      "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.PersistAndNotifyChatTurnAsync(TurnContext,string,StringBuilder,TurnOutcome,bool)",
      "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
      "name": "Agent42.Agents.AgentGrain.PersistAndNotifyChatTurnAsync",
-     "line": 817,
+     "line": 823,
      "loc": 8,
      "span": 15,
      "params": 5
@@ -2011,10 +2011,10 @@
       "src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs",
       "src/Agent42.Agents/Webhooks/AgentGrain.Webhooks.cs"
      ],
-     "loc": 3521,
-     "span": 5780,
+     "loc": 3383,
+     "span": 5544,
      "ctorParams": 19,
-     "members": 309
+     "members": 305
     },
     {
      "key": "Agent42.Backend.AgentApi",
@@ -2218,6 +2218,16 @@
      "span": 185,
      "ctorParams": 5,
      "members": 12
+    },
+    {
+     "key": "Agent42.Agents.WebDocumentTool",
+     "files": [
+      "src/Agent42.Agents/Documents/WebDocumentTool.cs"
+     ],
+     "loc": 148,
+     "span": 240,
+     "ctorParams": 8,
+     "members": 6
     },
     {
      "key": "Agent42.Backend.TelegramSession",
@@ -2740,13 +2750,13 @@
   },
   "tests": {
    "summary": {
-    "files": 392,
-    "methods": 5315,
+    "files": 393,
+    "methods": 5320,
     "methodsOver60": 3,
     "methodsOver80": 0,
     "methodsOver100": 0,
     "methodsWith7PlusParams": 15,
-    "classes": 607,
+    "classes": 608,
     "classesOver500Loc": 11,
     "classesWithCtor7Plus": 1
    },

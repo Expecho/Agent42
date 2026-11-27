@@ -239,7 +239,7 @@ Format — every entry MUST have `evidence:` (a repo path) and `verified:` (date
   the cap bounds only the in-turn cost.
 - **Evidence:** `src/Agent42.Agents/Web/WebToolLimits.cs`, `src/Agent42.Agents/Documents/ReadDocumentLimits.cs`,
   `src/Agent42.Agents/Documents/WebDocumentLimits.cs`,
-  `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs` (`BuildWebDocumentPayload`),
+  `src/Agent42.Agents/Documents/WebDocumentTool.cs` (`BuildWebDocumentPayload`),
   `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`ExcludeInjectedContextMessages`),
   `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ChatAsync`, and `WriteSessionAndIndexAsync`'s `SerializeSessionAsync` (the persist tail `PersistTurnUnlessEphemeralAsync` calls, reached from `ChatCoreAsync`)),
   `tests/Agent42.Tests/AgentGrainTests.cs` (`ToolResults_DoNotBlowTheSessionSizeBudget`),
@@ -591,7 +591,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `src/Agent42.Agents/Copilot/AgentGrain.Copilot.cs` (`_copilotRuns`, `OpenCopilotRun`),
   `src/Agent42.Agents/Copilot/SchedulerBoundAIFunction.cs`, `src/Agent42.Agents/Copilot/ChatClientCopilotAgentFactory.cs`,
   `src/Agent42.Agents/Scheduling/AgentGrain.Scheduling.cs`, `src/Agent42.Agents/Push/PushTools.cs`,
-  `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs`, `src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs`,
+  `src/Agent42.Agents/Documents/WebDocumentTool.cs`, `src/Agent42.Agents/Artifacts/AgentGrain.ArtifactTools.cs`,
   `src/Agent42.Agents/SharedState/AgentGrain.SharedState.cs`, `src/Agent42.Agents/Memory/AgentGrain.Memory.cs`,
   `src/Agent42.Agents/ImageGeneration/AgentGrain.ImageTurn.cs`, `src/Agent42.Backend/Conversations/ChatContracts.cs`
   (`ChatRequest.Ephemeral`), `src/Agent42.Backend/wwwroot/js/attachments.js` (the incognito gate in `handleFiles`),
@@ -1492,7 +1492,8 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   is prod-only, ADR 0007 — the ADR 0061 `compositeIndexes` scar), and `SearchAsync` has **no
   per-document filter**, so it would mix in the conversation's *other* documents and label them as this
   URL's content. `ReadWebDocument_RanksWithoutQueryingTheIndex` counts index queries for exactly this.
-- **Evidence:** `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs`,
+- **Evidence:** `src/Agent42.Agents/Documents/WebDocumentTool.cs`, `src/Agent42.Agents/Documents/WebDocumentList.cs`,
+  `src/Agent42.Agents/Documents/AgentGrain.WebDocumentTool.cs` (the deferred rebuild),
   `src/Agent42.Agents/Conversations/AgentGrain.cs` (both consume sites, both commented),
   `src/Agent42.Agents/Conversations/TurnContext.cs` (`TakeWebDocumentIngested`),
   `tests/Agent42.Tests/WebDocumentToolTests.cs`,
