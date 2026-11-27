@@ -38,6 +38,16 @@ public sealed class QualityGateTests
     {
         { "coverage_new_code_pct_min", ".agentic/scripts/check-new-code-coverage.mjs" },
         { "cognitive_complexity_max", "Directory.Packages.props" },
+        { "method_lines_max", "Directory.Packages.props" },
+        { "method_params_max", "Directory.Packages.props" },
+    };
+
+    /// <summary>Each analyzer-enforced gate: its yaml key, its Sonar rule, the rule's parameter name and built-in default.</summary>
+    public static TheoryData<string, string, string, int> AnalyzerGates() => new()
+    {
+        { "cognitive_complexity_max", "S3776", "threshold", 15 },
+        { "method_lines_max", "S138", "max", 80 },
+        { "method_params_max", "S107", "max", 7 },
     };
 
     // Each gate is declared AND something in the repo measures it.
@@ -70,26 +80,36 @@ public sealed class QualityGateTests
         Assert.Equal(mapped.Order(), declared.Order());
     }
 
-    // Hard rule 3: a threshold lives in ONE place. S3776's threshold is settable only via a
-    // SonarLint.xml AdditionalFile (`.editorconfig` is silently ignored for it — measured on
-    // SonarAnalyzer.CSharp 10.33.0.1635), and the analyzer's built-in default is 15. So as long as the
-    // gate says 15 and no SonarLint.xml exists, there is exactly one number and it is the enforced one.
-    // Change the gate without adding that file and the build would keep enforcing 15 while the yaml
-    // claimed otherwise — silently, since nothing else compares them.
-    [Fact]
-    public void CognitiveComplexityGate_MatchesWhatTheAnalyzerActuallyEnforces()
+    // Hard rule 3: a threshold lives in ONE place. Each rule's threshold is settable only via a SonarLint.xml
+    // AdditionalFile (`.editorconfig` is silently ignored for it — measured), and the analyzer's built-in default
+    // is the number in the table above. So either the gate equals that default and no SonarLint.xml overrides the
+    // rule, or a SonarLint.xml carries the SAME number for THAT rule. Change the gate without the file and the build
+    // would keep enforcing the default while the yaml claimed otherwise — silently, since nothing else compares them.
+    // A SonarLint.xml for one rule must not excuse another, so the file is parsed per rule, not merely detected.
+    [Theory]
+    [MemberData(nameof(AnalyzerGates))]
+    public void AnalyzerGates_MatchWhatTheAnalyzerActuallyEnforces(string gateKey, string rule, string parameter, int builtInDefault)
     {
         var declared = int.Parse(
-            Regex.Match(Gates(), @"^\s*cognitive_complexity_max:\s*(\d+)", RegexOptions.Multiline).Groups[1].Value);
-        var hasSonarLintXml = Directory
+            Regex.Match(Gates(), $@"^\s*{gateKey}:\s*(\d+)", RegexOptions.Multiline).Groups[1].Value);
+        var configured = Directory
             .EnumerateFiles(RepoRoot(), "SonarLint.xml", SearchOption.AllDirectories)
-            .Any(p => !p.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
-                && !p.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal));
+            .Where(p => !p.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !p.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Select(p => Regex.Match(
+                File.ReadAllText(p),
+                $@"<Key>{rule}</Key>\s*<Parameters>\s*<Parameter>\s*<Key>{parameter}</Key>\s*<Value>(\d+)</Value>",
+                RegexOptions.Singleline))
+            .Where(m => m.Success)
+            .Select(m => int.Parse(m.Groups[1].Value))
+            .ToList();
 
+        var enforced = configured.Count > 0 ? configured[0] : builtInDefault;
         Assert.True(
-            declared == 15 || hasSonarLintXml,
-            $"cognitive_complexity_max is {declared}, but S3776's default is 15 and no SonarLint.xml overrides it — "
-            + "the build would still enforce 15. Add a SonarLint.xml AdditionalFile, or restore the gate to 15.");
+            declared == enforced && configured.Count <= 1,
+            $"{gateKey} is {declared}, but the build enforces {enforced} for {rule} "
+            + $"(built-in default {builtInDefault}, {configured.Count} SonarLint.xml override(s)). "
+            + "Add or fix the SonarLint.xml AdditionalFile for this rule, or restore the gate.");
     }
 
     // The rule is adopted, and adopted as BLOCKING. Two ways this silently stops gating anything:
@@ -98,17 +118,22 @@ public sealed class QualityGateTests
     // `warning` it is visible but nothing fails, since the build is not -warnaserror. ADR 0051 cleared
     // the backlog, so `error` is what makes the threshold in quality-gates.yaml actually bind.
     [Fact]
-    public void S3776_IsEnabledAsAnError_AndTheAnalyzerIsReferenced()
+    public void AdoptedRules_AreEnabledAsErrors_AndTheAnalyzerIsReferenced()
     {
-        Assert.Contains("dotnet_diagnostic.S3776.severity = error", Read(".editorconfig"), StringComparison.Ordinal);
+        foreach (var rule in new[] { "S3776", "S138", "S107" })
+        {
+            Assert.Contains($"dotnet_diagnostic.{rule}.severity = error", Read(".editorconfig"), StringComparison.Ordinal);
+        }
+
         Assert.Contains("SonarAnalyzer.CSharp", Read("Directory.Packages.props"), StringComparison.Ordinal);
     }
 
-    // Only ONE Sonar rule is adopted (see .editorconfig for the measurement behind that). The blanket
+    // Only THREE Sonar rules are adopted (S3776 ADR 0050, S138 and S107 plan cc-11; see .editorconfig for the
+    // measurement behind that). A path-scoped exemption may LOWER one to `suggestion`, never turn another rule on. The blanket
     // default-off is what keeps it that way; delete it and ~300 warnings return, most of them firing on
     // this repo's deliberate idioms rather than on defects.
     [Fact]
-    public void OnlyTheAdoptedSonarRule_IsEnabled()
+    public void OnlyTheAdoptedSonarRules_AreEnabled()
     {
         var editorconfig = Read(".editorconfig");
 
@@ -117,9 +142,11 @@ public sealed class QualityGateTests
         var enabled = Regex.Matches(editorconfig, @"^dotnet_diagnostic\.(S\d+)\.severity\s*=\s*(\w+)", RegexOptions.Multiline)
             .Where(m => m.Groups[2].Value != "none")
             .Select(m => m.Groups[1].Value)
+            .Distinct()
+            .Order()
             .ToList();
 
-        Assert.Equal(["S3776"], enabled);
+        Assert.Equal(["S107", "S138", "S3776"], enabled);
     }
 
     // `dotnet format` runs an `analyzers` pass and exits non-zero on any analyzer diagnostic, so while

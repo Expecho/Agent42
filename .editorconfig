@@ -29,6 +29,14 @@ root = true
 dotnet_analyzer_diagnostic.severity = none
 dotnet_diagnostic.S3776.severity = error
 
+# Method length (S138) and parameter count (S107), plan cc-11. Gate `method_lines_max: 80` is the analyzer's own
+# default ("greater than the 80 lines authorized" on the pinned SonarAnalyzer.CSharp), so there is no override and
+# no second number. S138 counts lines of CODE (non-blank, non-comment). `method_params_max: 11` is NOT the
+# default (7): the tree had 25 offenders over 7 (15 in the Backend, 10 in tests), so the gate sits where the code
+# is and ratchets down as signatures shrink (SonarLint.xml carries the number; QualityGateTests pins it).
+dotnet_diagnostic.S138.severity = error
+dotnet_diagnostic.S107.severity = error
+
 # ADR 0039: src/Agent42.Agents is organised into feature FOLDERS, but every type stays in the
 # single flat `Agent42.Agents` namespace. That mismatch is intentional and load-bearing.
 #
@@ -48,3 +56,11 @@ dotnet_diagnostic.S3776.severity = error
 [src/Agent42.Agents/**.cs]
 dotnet_style_namespace_match_folder = false
 dotnet_diagnostic.IDE0130.severity = none
+
+# S107 exemption: the one offender above 11 when the gate was set, visible here. A new offender elsewhere fails the
+# build; do not widen this section, split the signature instead.
+#
+# The grain constructor takes its collaborators directly: ADR 0105 makes a missing DIRECT dependency fail silo
+# startup, and ADR 0106 rejected an aggregate object because it hides that check.
+[src/Agent42.Agents/Conversations/AgentGrain.cs]
+dotnet_diagnostic.S107.severity = suggestion

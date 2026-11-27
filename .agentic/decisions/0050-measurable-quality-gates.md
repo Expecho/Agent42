@@ -3,7 +3,7 @@ id: 0050
 date: 2026-08-25
 status: accepted
 tags: [quality-gates, tooling, ci, analyzers, coverage]
-amended_by: [0051]
+amended_by: [0051, 0149]
 ---
 
 # Title: Every quality gate must have a measuring tool in this repo

@@ -1,7 +1,7 @@
 # Plan cc-12: AgentGrain — write-based tier-B partials behind narrow ports
 
 planned-against: main @ 02414ff
-parent: `plan-cc-00-programme.md`; follow-up to cc-10 (ADR 0148), which moved only the read-only partials and left these
+parent: `completed/plan-cc-00-programme.md`; follow-up to cc-10 (ADR 0148), which moved only the read-only partials and left these
 for "a separate plan with a narrow state-mutation port". **Optional refactor, no feature value.** Do it only if making
 `AgentGrain` smaller is still wanted; the programme's main gains (single persist tail, short methods, named tool sets) shipped in 05-10.
 Branch per step: `feature/cc-12-<n>-<slug>`, one MR per step, each from up-to-date `main`.

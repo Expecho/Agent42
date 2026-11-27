@@ -1,4 +1,4 @@
-# Plan: clean-code programme (master — read this first, then the child plan for your session)
+# Plan: clean-code programme (COMPLETE, cc-01 to cc-11; master — read this first, then the child plan for your session)
 
 planned-against: main @ 02ebdf0
 
@@ -77,13 +77,14 @@ existing test suite staying green plus the narrow new tests the child names.
 | 02 | `completed/plan-cc-02-test-waits.md` | `feature/cc-02-test-waits` | done (pending merge) | |
 | 03 | `completed/plan-cc-03-silent-catches.md` | `fix/cc-03-silent-catches` | done (pending merge) | |
 | 04 | `completed/plan-cc-04-adapter-helpers.md` | `feature/cc-04-adapter-helpers` | done (pending merge) | |
-| 05 | `plan-cc-05-pipeline-split.md` | `feature/cc-05-pipeline-split` | done | |
+| 05 | `completed/plan-cc-05-pipeline-split.md` | `feature/cc-05-pipeline-split` | done (pending merge) | |
 | 06 | `completed/plan-cc-06-composition-roots.md` | `feature/cc-06-composition-roots` | done (pending merge) | |
 | 07 | `completed/plan-cc-07-fleet-config-endpoints.md` | `feature/cc-07-fleet-config-endpoints` | done (pending merge) | |
 | 08 | `completed/plan-cc-08-grain-persist-phases.md` | `feature/cc-08-grain-persist-phases` | done (pending merge) | |
 | 09 | `completed/plan-cc-09-grain-leaf-tools.md` | `feature/cc-09-grain-leaf-tools` | done (pending merge) | |
 | 10 | `completed/plan-cc-10-grain-tier-b.md` | `feature/cc-10-grain-tier-b` | done (pending merge): only the two read-only partials, ADR 0148; write-based partials stay | |
-| 11 | `plan-cc-11-enforce-and-docs.md` | `feature/cc-11-enforce-and-docs` | todo, last | |
+| 11 | `completed/plan-cc-11-enforce-and-docs.md` | `feature/cc-11-enforce-and-docs` | done (pending merge): S138 80 + S107 11 gates, ADR 0149 | |
+| 12 | `plan-cc-12-grain-tier-b-write-partials.md` | `feature/cc-12-<n>-<slug>` | optional follow-up to 10, not started | |
 
 ## Shared constraints (every child inherits these)
 

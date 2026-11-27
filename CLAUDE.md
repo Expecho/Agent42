@@ -79,7 +79,7 @@ the per-step discipline; plain subagents don't.
 **Convention enforcement:** conventions here are enforced by tooling
 (`dotnet format` whitespace/IDE analyzers — checked in CI; lefthook pre-push +
 `.claude/hooks/protect-main.mjs` for branch protection; **`SonarAnalyzer.CSharp` for
-cognitive complexity, and exactly that one rule** — ADR 0050). If you find yourself about
+cognitive complexity (S3776), method length (S138) and parameter count (S107), and exactly those three** — ADR 0050/0149). If you find yourself about
 to document a mechanical rule, add a lint rule instead.
 
 ## Repo-specific notes
@@ -152,8 +152,9 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
    endpoints; `AgentApiReachabilityTests` catches it.
 8. **A named `HttpClient` inherits `AddServiceDefaults`' retry pipeline.** Opt out explicitly, and give a
    proxy its own client.
-9. **S3776 cognitive complexity is a build error at 15** (ADR 0050/0051). Split a feature's registration
-   into its own folder, as `HindsightRegistration` does. Don't game the metric.
+9. **S3776 complexity (15), S138 method length (80 lines of code) and S107 parameters (11, ratcheting down)
+   are build errors** (ADR 0050/0051/0149). Split a feature's registration into its own folder, as
+   `HindsightRegistration` does. Don't game the metric.
 10. **Never reference the community `OrleansDashboard` package.** It crashes the silo on Orleans 10.x (ADR 0062).
 11. **A new selectable tool key lands OFF for anyone who ever pressed Save** (`null == all`, ADR 0021).
     Wildcards (`mcp`, `skills`) must be expanded before the picker sees them. The rule the model reads is the
@@ -203,4 +204,4 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Android companion app (`tools/Agent42.Android`): WebView sign-in + Easy Auth cookie, NDJSON contract golden file, full-duplex voice on the call audio path (amends 0079 for the app only), sideloaded signed APK | 0114 |
 | Self-hosting: `Storage:Provider` = `azure` (default, prod) or `local` (Postgres + a filesystem volume, `compose.yaml`, no Azure account); ADO.NET grain storage with the same `$type` JSON, pgvector (no ANN index), file stores, attachment reference URLs inlined as bytes per request, no auth, no migration | 0127 |
 | Deployment: tenant-portable IaC, create-or-reuse shared infra, repo variables, `preflight`, `infra/bootstrap.sh`; published multi-arch images on GHCR (compose pulls them, `az acr import` for Azure) | 0128, 0130 |
-| Layout and quality: feature folders, ES modules, gates, complexity, test clusters, shared silo registration + reachability test, AgentGrain services + per-run TurnContext | 0039, 0040, 0041, 0050, 0051, 0055, 0105, 0106 |
+| Layout and quality: feature folders, ES modules, gates, complexity, test clusters, shared silo registration + reachability test, AgentGrain services + per-run TurnContext | 0039, 0040, 0041, 0050, 0051, 0055, 0105, 0106, 0149 |

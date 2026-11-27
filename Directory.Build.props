@@ -5,4 +5,9 @@
          Off for every project; the browser-refresh script this drops is not used here. -->
     <EnableHotReloadInRuntimeConfigDevFile>false</EnableHotReloadInRuntimeConfigDevFile>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Sonar rule parameters (S107 max). The analyzer reads them only from an AdditionalFile named SonarLint.xml;
+         .editorconfig cannot carry them. QualityGateTests pins the number against quality-gates.yaml. -->
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)SonarLint.xml" Link="SonarLint.xml" />
+  </ItemGroup>
 </Project>
