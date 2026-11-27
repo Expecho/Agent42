@@ -38,6 +38,13 @@ validation and `UnknownArtifact`/`VersionList` (now `internal` statics that `Cli
 (`CompactToolPayloads`, `ParseArtifactResult`, `ArtifactsFromToolCalls`, ...) stays in `AgentGrain.ArtifactCompaction.cs` with
 `GetArtifactsAsync` and the three tool-name consts. The pane, purge and fork still read or replace the dictionary directly.
 
+**Step 4: `McpAppStore`.** The whole replay half of MCP Apps (ADR 0133) moves: store (with the cap), reconcile, the history
+projection and the result read. It takes a `Func` for the live record list and a `Func` for the session's call ids (null when
+the history is unreadable, so nothing is dropped), so it needs no port class of its own. `GetMcpAppResultAsync` and the
+session read (`LiveSessionCallIds`) stay in a slim `src/Agent42.Agents/Mcp/AgentGrain.McpApps.cs`. The call order is unchanged: `StoreAsync`
+before the end-of-turn write, `Reconcile` after the retention prune and the edit/regenerate truncation. Purge still clears
+the list in the grain.
+
 **The call sites are the control.** A fired reminder never feeds the list because `ReceiveReminder` calls the agent directly
 and never reaches `BuildUserTurnAsync`; there is deliberately no `TurnContext` check or flag in the port, because every turn
 kind that does reach it has an open context. Agent-run and fleet-result turns feeding the list is existing behaviour, kept.

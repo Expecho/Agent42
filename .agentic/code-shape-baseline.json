@@ -1,17 +1,17 @@
 {
- "measuredAt": "f028ebe",
+ "measuredAt": "b110d0a",
  "metric": "loc = non-blank non-comment lines from the method name line to its closing line; see code-shape.mjs",
  "floor": "methods loc>=40 or params>=5; classes loc>=400 or ctorParams>=5",
  "sections": {
   "src": {
    "summary": {
-    "files": 543,
-    "methods": 2917,
+    "files": 544,
+    "methods": 2919,
     "methodsOver60": 5,
     "methodsOver80": 1,
     "methodsOver100": 0,
     "methodsWith7PlusParams": 28,
-    "classes": 664,
+    "classes": 665,
     "classesOver500Loc": 4,
     "classesWithCtor7Plus": 21
    },
@@ -20,7 +20,7 @@
      "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.ChatTurnAsync(string,string?,IReadOnlyList<AttachmentRef>?,TurnContext,bool)",
      "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
      "name": "Agent42.Agents.AgentGrain.ChatTurnAsync",
-     "line": 622,
+     "line": 625,
      "loc": 84,
      "span": 158,
      "params": 5
@@ -137,7 +137,7 @@
      "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.StreamModelReplyAsync(ChatMessage,StringBuilder,TurnTokenTotals,TurnOutcome,ResearchRun?,TurnContext,CancellationToken)",
      "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
      "name": "Agent42.Agents.AgentGrain.StreamModelReplyAsync",
-     "line": 909,
+     "line": 912,
      "loc": 55,
      "span": 72,
      "params": 7
@@ -179,6 +179,15 @@
      "params": 6
     },
     {
+     "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.OnActivateAsync(CancellationToken)",
+     "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
+     "name": "Agent42.Agents.AgentGrain.OnActivateAsync",
+     "line": 283,
+     "loc": 53,
+     "span": 85,
+     "params": 1
+    },
+    {
      "key": "src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs::Agent42.Backend.LocalBridgeEndpoint.HandleAsync(HttpContext)",
      "file": "src/Agent42.Backend/Mcp/LocalBridgeEndpoint.cs",
      "name": "Agent42.Backend.LocalBridgeEndpoint.HandleAsync",
@@ -195,15 +204,6 @@
      "loc": 51,
      "span": 60,
      "params": 4
-    },
-    {
-     "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.OnActivateAsync(CancellationToken)",
-     "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
-     "name": "Agent42.Agents.AgentGrain.OnActivateAsync",
-     "line": 282,
-     "loc": 51,
-     "span": 83,
-     "params": 1
     },
     {
      "key": "src/Agent42.Backend/ChatGateway/AgentApi.ChatGatewaySignal.cs::Agent42.Backend.AgentApi.VerifySignalNumberAsync(string,SignalVerifyRequest,IGrainFactory,IServiceProvider,HttpContext)",
@@ -434,7 +434,7 @@
      "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.AgentGrain(IPersistentState<AgentGrainState>,IUserChatClientFactoryProvider,IUserMcpToolProvider,IUserSkillProvider,IAttachmentStore,IDocumentIndex,IChatSearchIndex,IWebSearch,IWebDocumentFetcher,IDocumentIngestor,IGeocoder,HindsightIntegration,IPushNotificationSender,IChatDeliverySender,IFleetLauncher,ILogger<AgentGrain>,TimeProvider?,ClientToolTimeouts?,IUserModelRouterProvider?)",
      "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
      "name": "Agent42.Agents.AgentGrain.AgentGrain",
-     "line": 240,
+     "line": 241,
      "loc": 41,
      "span": 41,
      "params": 19
@@ -506,7 +506,7 @@
      "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.BuildUserTurnAsync(string,IReadOnlyList<AttachmentRef>?,bool)",
      "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
      "name": "Agent42.Agents.AgentGrain.BuildUserTurnAsync",
-     "line": 1399,
+     "line": 1402,
      "loc": 40,
      "span": 65,
      "params": 3
@@ -929,7 +929,7 @@
      "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.ChatAsync(string,string?,IReadOnlyList<AttachmentRef>?,bool,bool,IReadOnlyList<string>?,bool,string?)",
      "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
      "name": "Agent42.Agents.AgentGrain.ChatAsync",
-     "line": 453,
+     "line": 456,
      "loc": 21,
      "span": 30,
      "params": 8
@@ -1109,7 +1109,7 @@
      "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.ChatCoreAsync(string,string?,IReadOnlyList<AttachmentRef>?,TurnContext,bool)",
      "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
      "name": "Agent42.Agents.AgentGrain.ChatCoreAsync",
-     "line": 604,
+     "line": 607,
      "loc": 17,
      "span": 17,
      "params": 5
@@ -1244,7 +1244,7 @@
      "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.TrailingEventsAsync(string,StringBuilder,TurnOutcome,McpReauthTurnObserver,bool)",
      "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
      "name": "Agent42.Agents.AgentGrain.TrailingEventsAsync",
-     "line": 852,
+     "line": 855,
      "loc": 14,
      "span": 16,
      "params": 5
@@ -1541,7 +1541,7 @@
      "key": "src/Agent42.Agents/Conversations/AgentGrain.cs::Agent42.Agents.AgentGrain.PersistAndNotifyChatTurnAsync(TurnContext,string,StringBuilder,TurnOutcome,bool)",
      "file": "src/Agent42.Agents/Conversations/AgentGrain.cs",
      "name": "Agent42.Agents.AgentGrain.PersistAndNotifyChatTurnAsync",
-     "line": 826,
+     "line": 829,
      "loc": 8,
      "span": 15,
      "params": 5
@@ -2053,10 +2053,10 @@
       "src/Agent42.Agents/Tools/AgentGrain.BuildAgent.cs",
       "src/Agent42.Agents/Webhooks/AgentGrain.Webhooks.cs"
      ],
-     "loc": 3204,
-     "span": 5317,
+     "loc": 3138,
+     "span": 5227,
      "ctorParams": 19,
-     "members": 293
+     "members": 289
     },
     {
      "key": "Agent42.Backend.FleetTaskService",
@@ -2351,6 +2351,16 @@
      "span": 113,
      "ctorParams": 6,
      "members": 29
+    },
+    {
+     "key": "Agent42.Agents.McpAppStore",
+     "files": [
+      "src/Agent42.Agents/Mcp/McpAppStore.cs"
+     ],
+     "loc": 84,
+     "span": 111,
+     "ctorParams": 5,
+     "members": 7
     },
     {
      "key": "Agent42.Backend.FleetCopilotAgentFactory",
@@ -2760,13 +2770,13 @@
   },
   "tests": {
    "summary": {
-    "files": 394,
-    "methods": 5323,
+    "files": 395,
+    "methods": 5333,
     "methodsOver60": 3,
     "methodsOver80": 0,
     "methodsOver100": 0,
     "methodsWith7PlusParams": 15,
-    "classes": 609,
+    "classes": 611,
     "classesOver500Loc": 11,
     "classesWithCtor7Plus": 1
    },

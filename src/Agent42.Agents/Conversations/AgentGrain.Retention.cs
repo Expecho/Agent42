@@ -40,7 +40,7 @@ public sealed partial class AgentGrain
         if (result.Pruned)
         {
             // A pruned turn takes its MCP App calls with it (ADR 0133): all four persist sites come through here.
-            ReconcileMcpApps();
+            _mcpApps.Reconcile();
             _search.RemapAfterPrune(result.DroppedProjectedTurns);
         }
 
