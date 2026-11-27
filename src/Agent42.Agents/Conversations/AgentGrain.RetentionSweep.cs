@@ -93,16 +93,8 @@ public sealed partial class AgentGrain
         }
     }
 
-    private async Task PersistSweepAsync(bool pruned)
-    {
-        var serializedSession = await _agent.SerializeSessionAsync(_session);
-        _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
-        await _state.WriteStateAsync();
-
-        // AFTER the durable write, like every persist site (ADR 0068).
-        await _search.ReconcileAfterPruneAsync(pruned);
-        await _search.IndexNewTurnsAsync();
-    }
+    // AFTER the durable write, like every persist site (ADR 0068): the shared tail.
+    private Task PersistSweepAsync(bool pruned) => WriteSessionAndIndexAsync(pruned);
 
     /// <summary>
     /// The whole-chat delete, with the effect of the Delete button (<c>DELETE /api/conversations/{id}</c>): purge the

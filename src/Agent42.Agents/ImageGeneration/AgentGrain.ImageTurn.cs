@@ -121,17 +121,8 @@ public sealed partial class AgentGrain
             CompactToolPayloads();
             var pruned = ApplyRetention();
 
-            var serializedSession = await _agent.SerializeSessionAsync(_session);
-            _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
-            await _state.WriteStateAsync();
-
-            // After the write, for the reason given at the chat site.
-            await _search.ReconcileAfterPruneAsync(pruned);
-
-            // Search projection (ADR 0061). This site really does have an `if (!turn.Ephemeral)` block —
-            // unlike the other two, which are an early return and a no-guard-by-design path — so the
-            // write goes INSIDE it. Best-effort inside.
-            await _search.IndexNewTurnsAsync();
+            // Search projection (ADR 0061) goes INSIDE this block: an incognito turn must not index.
+            await WriteSessionAndIndexAsync(pruned);
 
             // Outbound webhook (ADR 0094), fire site 2 of 3: inside this site's own persist block, because the image
             // turn never reaches the chat persist. A count only, never the image's URL (credential-bearing).

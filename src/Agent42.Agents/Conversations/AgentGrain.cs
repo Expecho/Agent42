@@ -1289,6 +1289,24 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         CompactToolPayloads();
         var pruned = ApplyRetention();
 
+        // Search projection (ADR 0061). No ephemeral guard needed: the early return above already
+        // took the incognito path, so reaching here means the turn is persisted.
+        // The fleet analyzer panel's chat is never indexed (ADR 0123): its text quotes fleet output and /api/search
+        // would list it, opening a conversation no sidebar knows.
+        await WriteSessionAndIndexAsync(pruned, indexTurns: !AgentKinds.IsFleetAnalyzer(_state.State.AgentKind));
+
+        _logger.LogInformation("Agent grain {GrainKey} completed a turn and persisted its session",
+            this.GetPrimaryKeyString());
+        return true;
+    }
+
+    // The ONE definition of the persist tail (cc-08): serialize the session ONCE, write the state, reconcile the search
+    // index, project the new turns. Compact and prune stay at the call site because their order differs per site (a chat
+    // turn stores MCP apps first, a truncation reconciles them last). Used by the chat turn, a fired reminder, the image
+    // turn, a history truncation and the retention sweep; the fork's first initialisation is deliberately NOT a user
+    // (it registers the retention sweep between the write and the index, and has no prune to reconcile).
+    private async Task WriteSessionAndIndexAsync(bool pruned, bool indexTurns = true)
+    {
         var serializedSession = await _agent.SerializeSessionAsync(_session);
         _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
         // This write carries any shared-state edit made during the run (ADR 0089), so nothing is left to flush.
@@ -1300,19 +1318,11 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
         // a non-reentrant grain, which must not sit in front of the write ADR 0046's stream recovery reads.
         await _search.ReconcileAfterPruneAsync(pruned);
 
-        // Search projection (ADR 0061). No ephemeral guard needed: the early return above already
-        // took the incognito path, so reaching here means the turn is persisted. Best-effort inside.
-        // When the reconcile above reset the cursor, this is the re-projection from ordinal 0.
-        // The fleet analyzer panel's chat is never indexed (ADR 0123): its text quotes fleet output and /api/search
-        // would list it, opening a conversation no sidebar knows.
-        if (!AgentKinds.IsFleetAnalyzer(_state.State.AgentKind))
+        // Best-effort inside. When the reconcile above reset the cursor, this is the re-projection from ordinal 0.
+        if (indexTurns)
         {
             await _search.IndexNewTurnsAsync();
         }
-
-        _logger.LogInformation("Agent grain {GrainKey} completed a turn and persisted its session",
-            this.GetPrimaryKeyString());
-        return true;
     }
 
     // Builds the user turn. Images ride alongside the text as UriContent parts pointing at a
@@ -1704,26 +1714,14 @@ public sealed partial class AgentGrain : Grain, IAgentGrain, IRemindable
 
         _state.State.TurnAttachments.Add([]);
 
-        // Retention (ADR 0016), same as the chat path. This site does its OWN serialize — it does not
-        // delegate to PersistTurnUnlessEphemeralAsync — so the call has to be repeated here.
+        // Retention (ADR 0016), same as the chat path. This site does not delegate to PersistTurnUnlessEphemeralAsync
+        // (a fired reminder is never ephemeral, so it needs no guard and always indexes), but it shares the persist tail.
         CompactToolPayloads();
         var pruned = ApplyRetention();
 
-        var serializedSession = await _agent.SerializeSessionAsync(_session);
-        _state.State.SerializedSession = JsonSerializer.Serialize(serializedSession);
-
         _state.State.ScheduledPrompts[reminderName] = info with { TimesFired = info.TimesFired + 1 };
 
-        // This write carries any shared-state edit made during the run (ADR 0089), so nothing is left to flush.
-        _sharedStateDirty = false;
-        await _state.WriteStateAsync();
-
-        // After the write, for the reason given at the chat site.
-        await _search.ReconcileAfterPruneAsync(pruned);
-
-        // Search projection (ADR 0061). Deliberately NO ephemeral guard here — a fired reminder is never
-        // ephemeral and always persists. Best-effort inside.
-        await _search.IndexNewTurnsAsync();
+        await WriteSessionAndIndexAsync(pruned);
 
         // Consume site 2 of 2 (ADR 0066), and the one that is easy to miss: this method does NOT drain
         // ChatCoreAsync — it calls _agent.RunAsync directly and does its own serialize/write/index —
