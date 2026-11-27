@@ -28,6 +28,7 @@
     defaultTools: null,     // the user's default chat selection (profile.enabledTools), null meaning all
     attachments: [],        // File objects the composer will send with the next task (ADR 0101)
     ingested: null,         // the selected task's documents.ingested files, from its event log
+    recovered: null,        // the selected task's recover.prepared event: what a Recover reused (ADR 0152)
     autoAnswers: [],        // questions a chat-started task answered by itself (ADR 0115), from its event log
     clarify: null,          // the clarify phase (ADR 0118), from its event log: { phase: "asking" | "done", brief, questions, cleared }
     detailView: loadDetailView(), // "result" | "graph" | "details" (ADR 0116), the open tab, a per-viewer preference kept in localStorage
@@ -58,7 +59,7 @@
 
   function resetTaskState() {
     S.teams.clear(); S.calls.clear(); S.rootTeamId = null; S.live = null;
-    S.budget = null; S.prompt = null; S.panel = null; S.ingested = null; S.autoAnswers = []; S.clarify = null; S.graphOpen.clear(); graphScrolledTo = null; dirtyText.clear();
+    S.budget = null; S.prompt = null; S.panel = null; S.ingested = null; S.recovered = null; S.autoAnswers = []; S.clarify = null; S.graphOpen.clear(); graphScrolledTo = null; dirtyText.clear();
     renderPrompt();
     invalidate();
   }
@@ -216,6 +217,8 @@
   const handlers = {
     "task.started"(d, time) { S.live = { status: "running", started: time, model: d.model }; },
     "documents.ingested"(d) { S.ingested = d.files || []; },
+    // A recovered task (ADR 0152): what it took from the task it continues, shown under the task header.
+    "recover.prepared"(d) { S.recovered = d; },
     "task.finished"(d, time) {
       S.live = { status: d.status, finished: time };
       const t = taskById(d.taskId);
@@ -678,7 +681,7 @@
   // Run again passes the record's enabledTools (null too), which then wins over the picker, and the task whose files
   // it copies (copyInputsOf). Only the composer's own submit sends the attached files: as multipart, to the files
   // route, and as plain JSON when there are none.
-  async function submitTask(text, followUpOf, enabledTools, copyInputsOf, clarify, selfReview) {
+  async function submitTask(text, followUpOf, enabledTools, copyInputsOf, clarify, selfReview, recoverOf) {
     const task = (text ?? composer.ta.value).trim();
     if (!task) { composer.ta.focus(); return; }
     composer.btn.disabled = true;
@@ -691,6 +694,7 @@
       copyInputsOf: copyInputsOf || null,
       clarify: clarify !== undefined ? clarify : composer.clarify.checked,
       selfReview: selfReview !== undefined ? selfReview : composer.selfReview.checked,
+      recoverOf: recoverOf || null,
     };
     const files = text === undefined ? S.attachments : [];
     let r;
@@ -714,14 +718,17 @@
     }
   }
 
-  // Follow-up threads: every task under the first task of its chain (followUpOf, walked while the parent is in the list
+  // A task's parent: the task it follows up, or (ADR 0152) the unfinished task it recovers.
+  const parentOf = t => t.followUpOf || t.recoveredFrom;
+
+  // Follow-up threads: every task under the first task of its chain (followUpOf or recoveredFrom, walked while the parent is in the list
   // and older, so a deleted parent starts a thread and no loop is possible), the follow-ups oldest first. `tasks` is
   // newest first, so a thread is met first through its newest task and the Map's insertion order is "latest activity
   // first": a new follow-up moves its thread to the top.
   function taskThreads(tasks) {
     const at = new Map(tasks.map((t, i) => [t.id, i]));
     const rootOf = t => {
-      while (t.followUpOf && at.get(t.followUpOf) > at.get(t.id)) t = tasks[at.get(t.followUpOf)];
+      while (parentOf(t) && at.get(parentOf(t)) > at.get(t.id)) t = tasks[at.get(parentOf(t))];
       return t;
     };
     const threads = new Map();
@@ -766,7 +773,7 @@
       if (toggle) head.querySelector(".task-meta").append(toggle);
       if (!open) { items.push(head); continue; }
       // A follow-up says which task it continues only when that is not the row right above it (a branch).
-      const kids = shown.map((t, i) => row(t, " follow-up", t.followUpOf !== (shown[i - 1] || thread.root).id && num.has(t.followUpOf) ? t.followUpOf : null));
+      const kids = shown.map((t, i) => row(t, " follow-up", parentOf(t) !== (shown[i - 1] || thread.root).id && num.has(parentOf(t)) ? parentOf(t) : null));
       items.push(h("div", { class: "thread" }, head, h("div", { class: "thread-kids" }, kids)));
     }
     $("#taskList").replaceChildren(...(items.length
@@ -813,13 +820,21 @@
   }
 
   function taskHeader(task) {
-    const parent = task.followUpOf && taskById(task.followUpOf);
+    const parent = parentOf(task) && taskById(parentOf(task));
+    const recovered = !!task.recoveredFrom;
     const root = S.teams.get(S.rootTeamId);
     return h("header", { class: "task-head" },
       h("div", { class: "crumbs" }, root && [h("span", { text: teamLabel(root) }), " / "], `Task #${taskNumber(task.id)}`,
-        parent && [" · follow-up on ", h("a", { text: `#${taskNumber(parent.id)}`, onclick: () => selectTask(parent.id) })]),
+        parent && [recovered ? " · recovered from " : " · follow-up on ", h("a", { text: `#${taskNumber(parent.id)}`, onclick: () => selectTask(parent.id) })]),
       h("h1", { text: firstLine(task.request, 110), title: task.request }),
-      h("div", { class: "status-line" }, h("span", { class: "dot " + task.status }), statusText(task.status), " · ", dur(task.startedAt, task.finishedAt)));
+      h("div", { class: "status-line" }, h("span", { class: "dot " + task.status }), statusText(task.status), " · ", dur(task.startedAt, task.finishedAt)),
+      recovered && S.recovered && h("div", { class: "muted", text: recoveredText(S.recovered) }));
+  }
+
+  // What a Recover reused, in words: the approved team (when one was found), how many of its agents had finished, the files.
+  function recoveredText(r) {
+    const team = r.planReused ? `the approved team (${r.agentsDone} of ${r.agents} agents had finished)` : "no approved team, so a new one is planned";
+    return `Continues an earlier run with ${team} and ${r.files} workspace file${r.files === 1 ? "" : "s"}.`;
   }
 
   const tabBar = () => h("div", { class: "pagetabs", role: "tablist", "aria-label": "View" }, TABS.map(([view, label]) =>
@@ -970,12 +985,14 @@
     if (r.ok && S.selectedTask === id) { S.files = { taskId: id, list: r.data || [] }; invalidate(); }
   }
 
-  // An interrupted, stopped or failed task can't be followed up, but its request can run again as a new task. A follow-up
-  // runs again in the shared workspace; a new task gets a new one, so it copies the old task's attached files (ADR 0101).
+  // An interrupted, stopped or failed task can't be followed up. Recover continues it in the same workspace and canvas, with the
+  // team the user approved (ADR 0152); Run again starts its request over as a new task. A follow-up runs again in the shared
+  // workspace; a new task gets a new one, so it copies the old task's attached files (ADR 0101).
   function runAgainCard(task) {
     return ["interrupted", "stopped", "failed"].includes(task?.status) && !running() && h("div", { class: "card follow-up-cta" },
       h("div", null, h("b", { text: task.status === "interrupted" ? "Interrupted by a restart" : "Didn't finish" }),
-        h("div", { class: "muted", text: "Run the same request again as a new task." })),
+        h("div", { class: "muted", text: "Recover continues where it stopped, in the same workspace. Run again starts the request over." })),
+      h("button", { class: "btn primary", text: "Recover", onclick: () => submitTask(task.request, null, task.enabledTools ?? null, null, false, !!task.selfReview, task.id) }),
       h("button", { class: "btn", text: "Run again", onclick: () => submitTask(task.request, task.followUpOf || null, task.enabledTools ?? null, task.followUpOf ? null : task.id, !!task.clarify, !!task.selfReview) }));
   }
 

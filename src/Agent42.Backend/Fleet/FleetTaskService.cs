@@ -7,11 +7,13 @@ namespace Agent42.Backend;
 /// copies into the new workspace (ADR 0101). <paramref name="OriginConversationId"/> is set only by a chat's
 /// <c>start_fleet_task</c> (ADR 0115), never by the page. <paramref name="Clarify"/> asks the user questions about
 /// the task before it is planned (ADR 0118); a task with an origin never does. <paramref name="SelfReview"/> lets the agent
-/// that writes a team's result check it and fix gaps (ADR 0119); a task with an origin never does either.</summary>
+/// that writes a team's result check it and fix gaps (ADR 0119); a task with an origin never does either.
+/// <paramref name="RecoverOf"/> starts a new task from an unfinished one of the user's (ADR 0152): it takes that task's
+/// request, model, token cap, tools and self-review, shares its workspace, and ignores the other task settings.</summary>
 public sealed record FleetSubmit(
     string Task, string? FollowUpOf = null, string? Model = null, long? MaxTokens = null, IReadOnlyList<string>? EnabledTools = null,
     IReadOnlyList<FleetInputFile>? Files = null, string? CopyInputsOf = null, string? OriginConversationId = null, bool Clarify = false,
-    bool SelfReview = false);
+    bool SelfReview = false, string? RecoverOf = null);
 
 /// <summary>How a stop, answer or delete went.</summary>
 public enum FleetOutcome { Ok, NotFound, Conflict }
@@ -57,6 +59,13 @@ public sealed partial class FleetTaskService(
     public async Task<(string? TaskId, string? Error)> SubmitAsync(
         string userId, FleetSubmit request, UserTelemetryContext? telemetry = null, CancellationToken cancellationToken = default)
     {
+        var (previous, recovering, resolved, previousError) = await ResolvePreviousAsync(userId, request, cancellationToken);
+        if (previousError is not null)
+        {
+            return (null, previousError);
+        }
+
+        request = resolved;
         if (string.IsNullOrWhiteSpace(request.Task))
         {
             return (null, "The task is empty.");
@@ -82,13 +91,6 @@ public sealed partial class FleetTaskService(
             return (null, "Pick one of your models that supports tools.");
         }
 
-        FleetTaskRecord? previous = null;
-        if (!string.IsNullOrWhiteSpace(request.FollowUpOf)
-            && (previous = await GetAsync(userId, request.FollowUpOf, cancellationToken)) is not { CanFollowUp: true })
-        {
-            return (null, "Only a task of yours that finished well can be followed up.");
-        }
-
         var (inputs, inputError) = await PrepareInputsAsync(userId, request, previous, cancellationToken);
         if (inputs is null || inputError is not null)
         {
@@ -100,7 +102,8 @@ public sealed partial class FleetTaskService(
             Id = Guid.NewGuid().ToString("N"),
             UserId = userId,
             Request = request.Task.Trim(),
-            FollowUpOf = previous?.Id,
+            FollowUpOf = recovering ? null : previous?.Id,
+            RecoveredFrom = recovering ? previous?.Id : null,
             Clarify = request.Clarify && string.IsNullOrWhiteSpace(request.OriginConversationId),
             SelfReview = request.SelfReview && string.IsNullOrWhiteSpace(request.OriginConversationId),
             OriginConversationId = string.IsNullOrWhiteSpace(request.OriginConversationId) ? null : request.OriginConversationId,
@@ -142,6 +145,41 @@ public sealed partial class FleetTaskService(
         }
 
         return (record.Id, null);
+    }
+
+    // The task whose workspace this one shares: a follow-up's finished task, or a recover's unfinished one (ADR 0152). A recover
+    // is resolved INTO previous, the shared-workspace role, so every sharing rule in SubmitAsync, above all the failed-start
+    // cleanup, treats the dead task's workspace as not this task's to delete. A recover re-runs with its own request, model,
+    // cap, tools and self-review, and is never an origin task and never clarifies: the digest is model output, and an origin
+    // task auto-approves Copilot shell and MCP writes (ADR 0115). With neither field, the request comes back unchanged.
+    private async Task<(FleetTaskRecord? Previous, bool Recovering, FleetSubmit Request, string? Error)> ResolvePreviousAsync(
+        string userId, FleetSubmit request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.RecoverOf))
+        {
+            if (string.IsNullOrWhiteSpace(request.FollowUpOf))
+            {
+                return (null, false, request, null);
+            }
+
+            return await GetAsync(userId, request.FollowUpOf, cancellationToken) is { CanFollowUp: true } followed
+                ? (followed, false, request, null)
+                : (null, false, request, "Only a task of yours that finished well can be followed up.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.FollowUpOf) || !string.IsNullOrWhiteSpace(request.CopyInputsOf))
+        {
+            return (null, true, request, "A recovery shares the files of the task it recovers, so it can't follow up or copy files too.");
+        }
+
+        if (await GetAsync(userId, request.RecoverOf, cancellationToken) is not { CanRecover: true } source)
+        {
+            return (null, true, request, "Only a task of yours that did not finish can be recovered.");
+        }
+
+        return (source, true, new FleetSubmit(
+            source.Request, Model: source.PlannerModel, MaxTokens: source.MaxTokens, EnabledTools: source.EnabledTools,
+            SelfReview: source.SelfReview, RecoverOf: source.Id), null);
     }
 
     // The operator's options with this user's overrides on top; the operator's own when the host has no settings service.

@@ -18,6 +18,18 @@ public sealed partial class FleetTeamRunner
             return (new FleetTeamPlan(), []);
         }
 
+        if (context is { Depth: 0, Attempt: 1 } && run.TakeSeedPlan() is { } seed)
+        {
+            var seeded = new PlanSubmission(this, task, context);
+            var refusal = await seeded.SubmitSeedAsync(seed);
+            if (seeded.Plan is not null)
+            {
+                return (seeded.Plan, seeded.Agents);
+            }
+
+            previousAttempt = SeedRefusedNote(seed, refusal, previousAttempt);
+        }
+
         var submission = new PlanSubmission(this, task, context);
 
         // The plan arrives through a tool call rather than structured output, so a provider that ignores
@@ -56,6 +68,15 @@ public sealed partial class FleetTeamRunner
         }
 
         return submission.Plan is null ? (new FleetTeamPlan(), []) : (submission.Plan, submission.Agents);
+    }
+
+    // A recovery (ADR 0152) whose approved team can't be rebuilt (a model or tool it used is gone, or the budget no longer
+    // fits it) falls back to the planner, which is told what the earlier team was so it designs on it.
+    private static string SeedRefusedNote(FleetTeamPlan seed, string? refusal, string? previousAttempt)
+    {
+        var note = $"The team the user already approved for this task could not be rebuilt ({Cut(refusal ?? "it was refused", 300)}). It was a {seed.Pattern} team of: "
+            + string.Join(", ", seed.Agents.Select(a => a.Name)) + ". Design a new team that continues from the work already done.";
+        return previousAttempt is null ? note : $"{previousAttempt}\n\n{note}";
     }
 
     private int _lessonsApplied;
@@ -180,7 +201,7 @@ public sealed partial class FleetTeamRunner
                 return Rejected($"The plan was rejected: the call misses {missing}. Call submit_team_plan again with all required arguments.");
             }
 
-            var plan = new FleetTeamPlan
+            return await SubmitPlanAsync(new FleetTeamPlan
             {
                 Task = task,
                 Rationale = rationale,
@@ -189,8 +210,22 @@ public sealed partial class FleetTeamRunner
                 MaxGroupChatRounds = maxGroupChatRounds > 0 ? maxGroupChatRounds : runner.Options.DefaultMaxGroupChatRounds,
                 TerminationCriteria = terminationCriteria ?? "",
                 Stages = stages?.Select(stage => stage.ToList()).ToList() ?? [],
-            };
+            }, seeded: false);
+        }
 
+        /// <summary>Runs a recovery's stored plan through the same validation, agent loading and budget reservation as a planner
+        /// submission, without the approval prompt: the user approved exactly this team before (ADR 0152). Null when the team is
+        /// ready (<see cref="Plan"/> is set), otherwise why it was refused.</summary>
+        public async Task<string?> SubmitSeedAsync(FleetTeamPlan seed)
+        {
+            seed.Task = task;
+            var reply = await SubmitPlanAsync(seed, seeded: true);
+            return Plan is null ? reply : null;
+        }
+
+        // The half of a submission after the arguments are parsed, shared by the planner's tool and a recovery's seed.
+        private async Task<string> SubmitPlanAsync(FleetTeamPlan plan, bool seeded)
+        {
             if (Validate(plan) is { } invalid)
             {
                 return Rejected(invalid);
@@ -202,8 +237,8 @@ public sealed partial class FleetTeamRunner
                 return Rejected($"The plan was rejected, fix these agent definitions and submit the complete plan again:\n{string.Join("\n", errors)}");
             }
 
-            PublishSubmitted(plan, loaded, models);
-            if (await ApproveAsync() is { } refusal)
+            PublishSubmitted(plan, loaded, models, seeded);
+            if (!seeded && await ApproveAsync() is { } refusal)
             {
                 return Rejected(refusal);
             }
@@ -316,7 +351,7 @@ public sealed partial class FleetTeamRunner
                 : $"{definition.Name}: the name in the yaml is '{agent.Name}', it must be '{definition.Name}'. Check that the yaml is valid.";
         }
 
-        private void PublishSubmitted(FleetTeamPlan plan, List<AIAgent> loaded, Dictionary<string, string> models)
+        private void PublishSubmitted(FleetTeamPlan plan, List<AIAgent> loaded, Dictionary<string, string> models, bool seeded)
             => _run.Events.Publish("plan.submitted", new
             {
                 teamId = context.TeamId,
@@ -333,7 +368,7 @@ public sealed partial class FleetTeamRunner
                     model = models.GetValueOrDefault(agent.Name ?? "", _run.DefaultModel),
                     yaml = plan.Agents.First(d => d.Name.Equals(agent.Name, StringComparison.OrdinalIgnoreCase)).Yaml,
                 }),
-                needsApproval = context.Depth <= runner.Options.ApprovalDepth,
+                needsApproval = !seeded && context.Depth <= runner.Options.ApprovalDepth,
             });
 
         // Null when the team may run; otherwise the reply for the planner.

@@ -52,12 +52,13 @@ public sealed class FleetRunHarness : IDisposable
     public const string ModelA = "fake:model-a";
     public const string ModelB = "fake:model-b";
 
+    /// <param name="seedPlan">A recovery's stored plan (ADR 0152).</param>
     /// <param name="selfReview">The task asked for self-review (ADR 0119).</param>
     /// <param name="defaultClient">Replaces the default model's client (the planner, judge and self-review judge run on it).</param>
     public FleetRunHarness(
         FleetOptions? options = null, long maxTokens = 0, IReadOnlyList<AIFunction>? tools = null,
         bool selfReview = false, IChatClient? defaultClient = null,
-        IReadOnlyList<FleetLesson>? lessons = null, Func<IReadOnlyList<FleetLesson>, Task>? onLessonsApplied = null, params string[] answers)
+        IReadOnlyList<FleetLesson>? lessons = null, Func<IReadOnlyList<FleetLesson>, Task>? onLessonsApplied = null, FleetTeamPlan? seedPlan = null, params string[] answers)
     {
         Options = options ?? new FleetOptions { ApprovalDepth = -1 };
         Budget = new FleetBudget(maxTokens, Options.MaxAgentsPerTask, Options.BudgetSoftLimit, Options.MaxConcurrentSubTeamsPerLevel, Options.MaxTeamDepth);
@@ -81,6 +82,7 @@ public sealed class FleetRunHarness : IDisposable
             },
             ModelNames = new Dictionary<string, string?> { [ModelA] = "Model A" },
             SelfReview = selfReview,
+            SeedPlan = seedPlan,
             Lessons = lessons ?? [],
             OnLessonsApplied = onLessonsApplied,
             Tools = tools ?? [],

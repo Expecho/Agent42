@@ -4233,11 +4233,11 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   deliberately no startup scan of all users' blobs. Two orderings depend on this: a submit adds to the registry
   BEFORE it saves the `running` record, and a finishing task saves its final record BEFORE it leaves the registry.
   Reversing either makes a live task read as interrupted. A graceful shutdown (`StopAsync`) persists running tasks
-  as `interrupted` itself, best effort. An interrupted task can't be followed up; the page offers "Run again".
+  as `interrupted` itself, best effort. An interrupted task can't be followed up; the page offers "Recover" (a new task on its workspace, ADR 0152) and "Run again".
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetTaskService.cs` (`SubmitAsync`, `NormalizeAsync`, `StopAsync`),
   `src/Agent42.Backend/Fleet/FleetTaskService.Run.cs` (`FinishAsync`),
   `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`RunningNotInRegistry_IsInterrupted_AndPersisted`, `Shutdown_PersistsInterrupted`)
-- **Verified:** 2026-11-24
+- **Verified:** 2026-11-27
 
 ### The fleet workspace sync DELETES stored files that aren't on local disk: materialize before a run writes
 
@@ -5147,4 +5147,18 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   separate and `down -v` removes only those. Relative `volumes:` paths in an overlay resolve against the FIRST compose file's directory
   (the repo root), not the overlay's.
 - **Evidence:** `tests/e2e/selfhost/compose.e2e.yaml`, `tests/e2e/selfhost.spec.mjs`
+- **Verified:** 2026-11-27
+
+### A fleet recover is resolved INTO `previous`, and its seed plan is taken once by the root team's first attempt
+
+- **Claim:** everything about a shared workspace in `FleetTaskService.SubmitAsync` is keyed off the local `previous` (workspace id,
+  notes, documents, the room check, `RunAsync`'s materialize condition, and the failed-start cleanup
+  `DiscardInputsQuietlyAsync(ownWorkspace: previous is null)`, which DELETES the whole workspace when it thinks the task owns
+  it). `ResolvePreviousAsync` therefore returns the interrupted task AS `previous` for a recover; a second variable that leaves
+  `previous` null would wipe the dead task's workspace on a failed start. A recovered task is not a follow-up (`FollowUpOf` stays
+  null, the parent has no `Result`) and its own `Inputs` stays empty so nothing is re-ingested. The seed plan (`FleetRun.TakeSeedPlan`)
+  is consumed only at depth 0, attempt 1, and only once: a later new-team round or a sub-team goes to the planner. The seeded plan
+  skips approval inside `PlanSubmission.SubmitPlanAsync(seeded: true)`, never through a flag on the planner-facing tool.
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetTaskService.cs` (`ResolvePreviousAsync`), `src/Agent42.Backend/Fleet/FleetTeamRunner.Planning.cs`,
+  `src/Agent42.Backend/Fleet/FleetRun.cs`, `tests/Agent42.Tests/FleetTaskServiceTests.Recover.cs`
 - **Verified:** 2026-11-27

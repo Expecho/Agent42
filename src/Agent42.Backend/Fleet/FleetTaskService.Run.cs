@@ -45,6 +45,7 @@ public sealed partial class FleetTaskService
                 taskId = record.Id,
                 task = record.Request,
                 followUpOf = record.FollowUpOf,
+                recoveredFrom = record.RecoveredFrom,
                 model = record.PlannerModel,
                 maxTokens = record.MaxTokens,
                 workspace = record.WorkspaceId,
@@ -52,8 +53,13 @@ public sealed partial class FleetTaskService
                 inputs = record.Inputs,
             });
             record = await IngestInputsAsync(task, workspace);
-            var run = await BuildRunAsync(task, workspace, canvas, models);
-            var input = await ComposeInputAsync(task, record, previous, workspace, run);
+            var recovery = record.RecoveredFrom is null || previous is null
+                ? null
+                : await FleetRecovery.ReadAsync(store, previous, task.Options.MaxRecoveryDigestChars, logger, task.Budget.Token);
+            var run = await BuildRunAsync(task, workspace, canvas, models, recovery?.Plan);
+            var input = recovery is null
+                ? await ComposeInputAsync(task, record, previous, workspace, run)
+                : RecoveredInput(task, record, workspace, run, recovery);
             result = await new FleetTeamRunner(run).RunAsync(input);
             failure = result is null ? FleetTeamRunner.NoTeamResult : null;
         }
@@ -117,7 +123,8 @@ public sealed partial class FleetTaskService
         return text.ToString();
     }
 
-    private async Task<FleetRun> BuildRunAsync(RunningFleetTask task, FleetWorkspace workspace, FleetCanvas canvas, IReadOnlyList<ModelInfo> models)
+    private async Task<FleetRun> BuildRunAsync(
+        RunningFleetTask task, FleetWorkspace workspace, FleetCanvas canvas, IReadOnlyList<ModelInfo> models, FleetTeamPlan? seedPlan = null)
     {
         var record = task.Record;
         var factory = await chatClients.GetForUserAsync(record.UserId, task.Budget.Token);
@@ -167,10 +174,11 @@ public sealed partial class FleetTaskService
             Interaction = task.Questions,
             AutoApprove = task.AutoApprove,
             SelfReview = record.SelfReview,
+            SeedPlan = seedPlan,
             Lessons = activeLessons,
             OnLessonsApplied = applied => ApplyLessonsAsync(task, applied),
             Logger = logger,
-            AfterAttempt = ct => SyncWorkspaceAsync(record, workspace, ct),
+            AfterAttempt = ct => SyncAndKeepNotesAsync(task, workspace, ct),
         };
     }
 
@@ -226,6 +234,28 @@ public sealed partial class FleetTaskService
         return (previous is null ? request : await FollowUpInputAsync(record, previous, workspace, run.Prompts, request)) + files;
     }
 
+    // The input of a recovered task (ADR 0152): its request, the digest of the earlier run, and the files and canvas pages it
+    // finds. Never clarifies (nobody is asked about a task the user already started). recover.prepared tells the page what was
+    // reused; planReused says an accepted plan was found, whether the run could rebuild it shows in the plan events.
+    private static string RecoveredInput(RunningFleetTask task, FleetTaskRecord record, FleetWorkspace workspace, FleetRun run, FleetRecoveryResult recovery)
+    {
+        var files = workspace.ListFiles();
+        task.Log.Publish("recover.prepared", new
+        {
+            from = record.RecoveredFrom,
+            planReused = recovery.Plan is not null,
+            agentsDone = recovery.AgentsDone,
+            agents = recovery.AgentsTotal,
+            files = files.Count,
+        });
+        var pages = run.Canvas.Pages;
+        return run.Prompts.Render("recover",
+            ("request", record.Request),
+            ("digest", recovery.Digest),
+            ("files", files.Count == 0 ? "(none)" : string.Join('\n', files.Select(file => $"- {file}"))),
+            ("canvas", pages.Count == 0 ? "(none)" : string.Join('\n', pages.Select(page => $"- {page.Name}")))) + AttachedFiles(record);
+    }
+
     // The input of a follow-up: the new request with the earlier requests and their results, oldest first, and the
     // files in the workspace. The latest result is given up to MaxRetryResultLength, earlier ones shorter.
     private async Task<string> FollowUpInputAsync(
@@ -248,6 +278,23 @@ public sealed partial class FleetTaskService
             ("request", request),
             ("history", history),
             ("files", files.Count == 0 ? "(none)" : string.Join("\n", files.Select(file => $"- {file}"))));
+    }
+
+    // After each attempt: the files, and the notes in the stored record, so a crash no longer loses them and a recover (ADR 0152)
+    // starts from them. task.Record is assigned FIRST, for the reason ApplyLessonsAsync gives. A failed save is logged: the
+    // attempt's files are already stored, and FinishAsync saves the notes again.
+    private async Task SyncAndKeepNotesAsync(RunningFleetTask task, FleetWorkspace workspace, CancellationToken cancellationToken)
+    {
+        await SyncWorkspaceAsync(task.Record, workspace, cancellationToken);
+        task.Record = task.Record with { Notes = new Dictionary<string, string>(workspace.Notes) };
+        try
+        {
+            await store.SaveTaskAsync(task.Record, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Fleet task {TaskId}: its notes could not be saved after an attempt", task.Record.Id);
+        }
     }
 
     private async Task SyncWorkspaceAsync(FleetTaskRecord record, FleetWorkspace workspace, CancellationToken cancellationToken)
