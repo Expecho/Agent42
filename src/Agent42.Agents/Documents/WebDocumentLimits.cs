@@ -17,7 +17,7 @@ namespace Agent42.Agents;
 ///
 /// <para><b><see cref="SanitizeFileName"/> lives here, and not in the production fetcher, for a reason
 /// worth stating:</b> the name it produces is attacker-influenced text that lands in the system prompt
-/// (<c>WithDocumentAwareness</c>) and in every citation's <c>SourceName</c>. It must therefore be one
+/// (<c>DocumentContext.WithAwareness</c>) and in every citation's <c>SourceName</c>. It must therefore be one
 /// implementation shared by <i>every</i> <see cref="IWebDocumentFetcher"/>, and the only assembly both
 /// the production (Backend) and offline (Agents) fetchers can reach is this one.</para>
 /// </summary>

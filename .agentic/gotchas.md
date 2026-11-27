@@ -1413,7 +1413,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   context, never throw**: guard on `DefaultEmbeddingModelId == ""` before embedding, because
   `NoEmbeddingGenerator.GenerateAsync` throws and the retrieval path must not reach it. (Upload without one is
   rejected instead.) Rationale: ADR 0030, 'Notes moved from gotchas.md'.
-- **Evidence:** `src/Agent42.Agents/Models/IChatClientFactory.cs` (`GetEmbeddingGenerator`/`DefaultEmbeddingModelId`), `src/Agent42.Backend/Models/ChatClientFactory.Foundry.cs` + `src/Agent42.Backend/Models/ChatClientFactory.OpenAICompatible.cs` (the embedding funcs), `src/Agent42.Agents/Documents/NoEmbeddingGenerator.cs`, `src/Agent42.Backend/Documents/DocumentIngestionService.cs`, `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`SearchDocumentContextAsync` empty-id guard), `src/Agent42.Backend/Models/UserProviderResolver.cs` (`EmbeddingDefaultModelId`), `.agentic/decisions/0030-user-configured-embedding-model.md`
+- **Evidence:** `src/Agent42.Agents/Models/IChatClientFactory.cs` (`GetEmbeddingGenerator`/`DefaultEmbeddingModelId`), `src/Agent42.Backend/Models/ChatClientFactory.Foundry.cs` + `src/Agent42.Backend/Models/ChatClientFactory.OpenAICompatible.cs` (the embedding funcs), `src/Agent42.Agents/Documents/NoEmbeddingGenerator.cs`, `src/Agent42.Backend/Documents/DocumentIngestionService.cs`, `src/Agent42.Agents/Documents/DocumentContext.cs` (`SearchAsync` empty-id guard), `src/Agent42.Backend/Models/UserProviderResolver.cs` (`EmbeddingDefaultModelId`), `.agentic/decisions/0030-user-configured-embedding-model.md`
 - **Verified:** 2026-11-24
 
 ### Cosmos vector search is prod-only: capability + pre-created container + no create-on-use
@@ -1502,7 +1502,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 
 ### A web-fetched document must never be described as "the user has uploaded" — and its file name is prompt text
 
-- **Claim:** `WithDocumentAwareness` renders `DocumentNames` under *"The user has uploaded the following
+- **Claim:** `DocumentContext.WithAwareness` renders `DocumentNames` under *"The user has uploaded the following
   document(s)…"*, the strongest trust signal in the system prompt. A document fetched from a
   **model-chosen** URL is attacker-authorable, so folding it into that list would assert user provenance
   for it — the exact inverse of `BuildFetchPayload`'s `"UNTRUSTED: …"` labelling. Hence a **separate**
@@ -1524,7 +1524,7 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   whole path, two sibling documents that differ only in a directory (a `2024` and a `2025` copy of the
   same report) become one label. Structured provenance would belong on `DocumentChunk`, not on the
   string — nobody has added it.
-- **Evidence:** `src/Agent42.Agents/Documents/AgentGrain.Documents.cs` (`WithDocumentAwareness`),
+- **Evidence:** `src/Agent42.Agents/Documents/DocumentContext.cs` (`WithAwareness`),
   `src/Agent42.Agents/Conversations/AgentGrainState.cs` (`WebDocumentNames`),
   `src/Agent42.Agents/Documents/WebDocumentLimits.cs` (`SanitizeFileName`),
   `tests/Agent42.Tests/WebDocumentToolTests.cs` (`WebDocument_IsNotDescribedAsUserUploaded`),
