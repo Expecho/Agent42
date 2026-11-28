@@ -175,6 +175,25 @@ public sealed class FleetPersonalToolsTests
     }
 
     [Fact]
+    public async Task PushTool_CounterMatchesSends()
+    {
+        var sender = new RecordingPushNotificationSender();
+        var counter = new FleetPushCounter();
+        var set = await WithCounterAsync(Catalog(WithDevice("alice").Factory, push: sender), counter);
+
+        for (var i = 0; i < FleetPushTools.MaxPushesPerTask + 2; i++)
+        {
+            await InvokeAsync(set.Tools, FleetPushTools.Name, new() { ["title"] = $"N{i}", ["body"] = "Body." });
+        }
+
+        Assert.Equal(sender.Sends.Count, counter.Count);
+        Assert.Equal(FleetPushTools.MaxPushesPerTask, counter.Count);
+    }
+
+    private static Task<FleetToolSet> WithCounterAsync(FleetToolCatalog catalog, FleetPushCounter counter)
+        => catalog.BuildAsync(new FleetToolContext("alice", "t1", "", [ToolCatalog.PushNotification], Interaction) { PushCounter = counter }, default);
+
+    [Fact]
     public async Task Push_DoesNotLogText()
     {
         var logger = new CapturingLogger<FleetToolCatalog>();

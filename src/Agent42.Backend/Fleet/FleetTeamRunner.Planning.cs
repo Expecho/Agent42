@@ -395,7 +395,7 @@ public sealed partial class FleetTeamRunner
                 case "" or "y" or "yes":
                     return null;
                 case "n" or "no":
-                    _run.Budget.Cancel("stopped by the user");
+                    _run.Budget.Cancel(FleetBudget.UserStopReason);
                     return "The user stopped the task. Do not submit a plan again.";
                 default:
                     return $"The user rejected the plan with this feedback, revise the plan and submit it again:\n{answer}";

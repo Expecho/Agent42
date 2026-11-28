@@ -31,7 +31,8 @@ public sealed partial class FleetTaskServiceTests : IAsyncDisposable
     private FleetTaskService Service(
         FleetOptions? options = null, FleetToolCatalog? tools = null, IChatClient? client = null,
         IDocumentIndex? documents = null, IEmbeddingGenerator<string, Embedding<float>>? embeddings = null,
-        IFleetCompletionNotifier? notifier = null, FleetStore? store = null, bool userSettings = false)
+        IFleetCompletionNotifier? notifier = null, FleetStore? store = null, bool userSettings = false,
+        IPushNotificationSender? push = null, TimeProvider? time = null)
     {
         store ??= _store;
         var effective = options ?? new FleetOptions { ApprovalDepth = -1, JudgeDepth = -1 };
@@ -44,9 +45,11 @@ public sealed partial class FleetTaskServiceTests : IAsyncDisposable
             new FixedCatalogs(),
             NullLogger<FleetTaskService>.Instance,
             tools,
+            time: time,
             documents: documents,
             ingestion: documents is null ? null : new DocumentIngestionService(new DocumentTextExtractor(), new DocumentChunker(), provider, documents),
             notifier: notifier,
+            push: push,
             settings: userSettings ? new FleetSettingsService(effective, store, new FixedCatalogs()) : null);
         _services.Add(service);
         return service;
@@ -1078,6 +1081,171 @@ public sealed partial class FleetTaskServiceTests : IAsyncDisposable
         }
 
         return list;
+    }
+
+    // ---- push notifications (ADR 0154) ----
+
+    private static readonly TimeSpan QuietFor = TimeSpan.FromMinutes(11);
+
+    [Fact]
+    public async Task Done_FromPage_PushesOnceWithTaskUrl()
+    {
+        var push = new RecordingPushNotificationSender();
+        var service = Service(push: push);
+
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan));
+        await FinishedAsync(service, Alice, taskId!);
+
+        var (userId, message) = Assert.Single(push.Sends);
+        Assert.Equal((Alice, FleetTaskNotifier.DoneText, $"/fleet/?task={taskId}"), (userId, message.Body, message.Url));
+    }
+
+    [Fact]
+    public async Task OriginTask_NoTerminalPush()
+    {
+        var push = new RecordingPushNotificationSender();
+        var service = Service(push: push);
+
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan, OriginConversationId: "conv-1"));
+        await FinishedAsync(service, Alice, taskId!);
+
+        Assert.Empty(push.Sends);
+    }
+
+    [Fact]
+    public async Task Stopped_ByPlanDecline_DoesNotPush()
+    {
+        var push = new RecordingPushNotificationSender();
+        var service = Service(Held, push: push);
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan));
+        await QuestionAsync(service, Alice, taskId!);
+
+        await service.AnswerAsync(Alice, taskId!, "n");
+        var stopped = await FinishedAsync(service, Alice, taskId!);
+
+        Assert.Equal((FleetTaskStatus.Stopped, FleetBudget.UserStopReason), (stopped.Status, stopped.Reason));
+        Assert.DoesNotContain(push.Sends, s => s.Message.Body != "A fleet task is waiting for your answer.");
+    }
+
+    [Fact]
+    public async Task ThrowingSender_DoesNotChangeStatus()
+    {
+        var sender = new ThrowingPushSender();
+        var service = Service(push: sender);
+
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan));
+
+        Assert.Equal(FleetTaskStatus.Done, (await FinishedAsync(service, Alice, taskId!)).Status);
+        Assert.Equal(1, sender.Calls);
+    }
+
+    [Fact]
+    public async Task Stuck_PushesOncePerQuietSpell()
+    {
+        var push = new RecordingPushNotificationSender();
+        var time = new ManualTimeProvider();
+        var gate = new GatedChatClient(new FakeChatClient());
+        var service = Service(client: gate, push: push, time: time);
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan));
+        await gate.Entered.WaitAsync(TimeSpan.FromSeconds(30));
+
+        await TickAsync(time, QuietFor, push, 1);
+        await TickAsync(time, TimeSpan.FromSeconds(5), push, 1);
+        await System.Threading.Tasks.Task.Delay(100);
+
+        var (_, message) = Assert.Single(push.Sends);
+        Assert.Equal((FleetTaskNotifier.StuckText, $"/fleet/?task={taskId}"), (message.Body, message.Url));
+        await service.StopAsync(Alice, taskId!);
+    }
+
+    [Fact]
+    public async Task Stuck_AppliesToOriginTasks()
+    {
+        var push = new RecordingPushNotificationSender();
+        var time = new ManualTimeProvider();
+        var gate = new GatedChatClient(new FakeChatClient());
+        var service = Service(client: gate, push: push, time: time);
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan, OriginConversationId: "conv-1"));
+        await gate.Entered.WaitAsync(TimeSpan.FromSeconds(30));
+
+        await TickAsync(time, QuietFor, push, 1);
+
+        Assert.Equal(FleetTaskNotifier.StuckText, Assert.Single(push.Sends).Message.Body);
+        await service.StopAsync(Alice, taskId!);
+    }
+
+    [Fact]
+    public async Task Stuck_ZeroDisables()
+    {
+        var push = new RecordingPushNotificationSender();
+        var time = new ManualTimeProvider();
+        var gate = new GatedChatClient(new FakeChatClient());
+        var service = Service(new FleetOptions { ApprovalDepth = -1, JudgeDepth = -1, StuckAfter = TimeSpan.Zero }, client: gate, push: push, time: time);
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan));
+        await gate.Entered.WaitAsync(TimeSpan.FromSeconds(30));
+
+        await TickAsync(time, QuietFor, push, 0);
+        await System.Threading.Tasks.Task.Delay(100);
+
+        Assert.Empty(push.Sends);
+        await service.StopAsync(Alice, taskId!);
+    }
+
+    [Fact]
+    public async Task Stuck_NotWhileQuestionOpen()
+    {
+        var push = new RecordingPushNotificationSender();
+        var time = new ManualTimeProvider();
+        var service = Service(Held, push: push, time: time);
+        var (taskId, _) = await service.SubmitAsync(Alice, new(OnePlan));
+        await QuestionAsync(service, Alice, taskId!);
+
+        await TickAsync(time, QuietFor, push, 0);
+        await System.Threading.Tasks.Task.Delay(100);
+
+        Assert.DoesNotContain(push.Sends, s => s.Message.Body == FleetTaskNotifier.StuckText);
+        await service.StopAsync(Alice, taskId!);
+    }
+
+    [Fact]
+    public void LastEventAt_AdvancesOnPublish()
+    {
+        var time = new ManualTimeProvider();
+        var log = new FleetEventLog(_store, Alice, "t1", maxBytes: 1_000, time);
+        var created = log.LastEventAt;
+
+        time.Advance(TimeSpan.FromMinutes(3));
+        log.Publish("tool.call", new { name = "x" });
+
+        Assert.Equal(created + TimeSpan.FromMinutes(3), log.LastEventAt);
+    }
+
+    // Advances the fake clock in one-second ticks (the flush loop's period), then waits for `expected` pushes when any are due.
+    private static async System.Threading.Tasks.Task TickAsync(ManualTimeProvider time, TimeSpan total, RecordingPushNotificationSender push, int expected)
+    {
+        for (var elapsed = TimeSpan.Zero; elapsed < total; elapsed += FleetTaskService.FlushInterval)
+        {
+            time.Advance(FleetTaskService.FlushInterval);
+            await System.Threading.Tasks.Task.Yield();
+        }
+
+        if (expected > 0)
+        {
+            await TestWait.WaitForAsync(() => System.Threading.Tasks.Task.FromResult(push.Sends.Count), c => c >= expected, "the stuck push");
+        }
+    }
+
+    private sealed class ThrowingPushSender : IPushNotificationSender
+    {
+        private int _calls;
+
+        public int Calls => Volatile.Read(ref _calls);
+
+        public System.Threading.Tasks.Task SendAsync(string userId, PushMessage message, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _calls);
+            throw new InvalidOperationException("boom");
+        }
     }
 
     private static async Task<FleetTaskRecord> FinishedAsync(FleetTaskService service, string user, string taskId)

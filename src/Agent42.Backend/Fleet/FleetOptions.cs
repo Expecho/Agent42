@@ -10,6 +10,10 @@ public sealed class FleetOptions
 {
     public const string SectionName = "Fleet";
 
+    /// <summary>How long a running task may publish no event, with no question open, before it pushes "gone quiet" (ADR 0154).
+    /// Operator-only. <see cref="TimeSpan.Zero"/> turns it off.</summary>
+    public TimeSpan StuckAfter { get; set; } = TimeSpan.FromMinutes(10);
+
     /// <summary>How deep teams nest: agents of a team below this depth get <c>delegate_to_team</c>.</summary>
     public int MaxTeamDepth { get; set; } = 6;
 

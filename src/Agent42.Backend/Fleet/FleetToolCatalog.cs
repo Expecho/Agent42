@@ -82,7 +82,7 @@ public sealed partial class FleetToolCatalog(
 
         if (push is not null && ToolCatalog.IsToolEnabled(FleetPushTools.Name, enabled))
         {
-            tools.Add(new FleetPushTools(push, grains, context.UserId, context.TaskId, logger).Tool);
+            tools.Add(new FleetPushTools(push, grains, context.UserId, context.TaskId, logger, context.PushCounter).Tool);
         }
 
         if (context is { Models: { } models, Workspace: { } workspace, ImageModels.Count: > 0 })
@@ -176,6 +176,9 @@ public sealed record FleetToolContext(
     public IReadOnlyList<AIFunction> DocumentTools { get; init; } = [];
 
     public FleetWorkspace? Workspace { get; init; }
+
+    /// <summary>The service-owned count of the model's pushes in this task (ADR 0154); null makes the push tool count for itself.</summary>
+    public FleetPushCounter? PushCounter { get; init; }
 
     /// <summary>The user's model factory, for the image generators.</summary>
     public IChatClientFactory? Models { get; init; }

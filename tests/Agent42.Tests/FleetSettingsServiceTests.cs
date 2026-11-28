@@ -132,7 +132,7 @@ public class FleetSettingsServiceTests
             nameof(FleetOptions.MaxTokensPerTaskLimit), nameof(FleetOptions.DefaultMaxTokensPerTask), nameof(FleetOptions.MaxConcurrentTasks),
             nameof(FleetOptions.CopilotAgentsEnabled), nameof(FleetOptions.DreamEnabled), nameof(FleetOptions.DreamTimeout), nameof(FleetOptions.SseKeepAlive),
             nameof(FleetOptions.MaxEventLogBytes), nameof(FleetOptions.MaxWorkspaceBytes), nameof(FleetOptions.MaxWorkspaceFiles),
-            nameof(FleetOptions.MaxInputFiles), nameof(FleetOptions.MaxInputFileBytes), nameof(FleetOptions.MaxRetryResultLength), nameof(FleetOptions.MaxToolTextLength),
+            nameof(FleetOptions.MaxInputFiles), nameof(FleetOptions.MaxInputFileBytes), nameof(FleetOptions.MaxRetryResultLength), nameof(FleetOptions.MaxToolTextLength), nameof(FleetOptions.StuckAfter),
         ];
 
         Assert.Empty(FleetSettingsService.Descriptors.Select(d => d.Key).Intersect(operatorOnly));

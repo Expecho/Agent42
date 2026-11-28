@@ -137,6 +137,7 @@ public sealed partial class FleetTaskService
             : await tools.BuildAsync(
                 new FleetToolContext(record.UserId, record.Id, record.Request, record.EnabledTools, task.Questions)
                 {
+                    PushCounter = task.Pushes,
                     DocumentTools = documentTools,
                     Workspace = workspace,
                     Models = factory,
@@ -322,11 +323,28 @@ public sealed partial class FleetTaskService
                 }
 
                 await FlushQuietlyAsync(task);
+                CheckStuck(task);
             }
         }
         catch (OperationCanceledException)
         {
             // The task ended; FinishAsync does the last flush.
+        }
+    }
+
+    // ADR 0154: quiet for Fleet:StuckAfter with no open question pushes once per quiet spell. Not awaited, so the tick keeps
+    // flushing; the notifier swallows its own exceptions. A chat-started task has no question (DecliningFleetInteraction).
+    private void CheckStuck(RunningFleetTask task)
+    {
+        if (_taskNotifier is null)
+        {
+            return;
+        }
+
+        var questionOpen = task.Questions is FleetQuestions { HasOpenQuestion: true };
+        if (task.Stuck.ShouldFire(_time.GetUtcNow(), task.Log.LastEventAt, task.Options.StuckAfter, questionOpen))
+        {
+            _ = _taskNotifier.NotifyStuckAsync(task.Record.UserId, task.Record.Id);
         }
     }
 
@@ -392,7 +410,17 @@ public sealed partial class FleetTaskService
             task.Dispose();
         }
 
+        await NotifyAfterSaveAsync(final, task.Pushes.Count);
+    }
+
+    // After the final save: the origin conversation (ADR 0115), then the generic push (ADR 0154, only for a task without one).
+    private async Task NotifyAfterSaveAsync(FleetTaskRecord final, int modelPushes)
+    {
         await NotifyOriginAsync(final);
+        if (_taskNotifier is not null)
+        {
+            await _taskNotifier.NotifyFinishedAsync(final, modelPushes);
+        }
     }
 
     // ADR 0115: a task started from a chat reports back to it, AFTER the save, so the conversation's get_fleet_task

@@ -23,11 +23,12 @@ public sealed class FleetPushTools
     private readonly string _userId;
     private readonly string _taskId;
     private readonly ILogger _logger;
-    private readonly Lock _gate = new();
-    private int _sent;
+    private readonly FleetPushCounter _counter;
 
-    public FleetPushTools(IPushNotificationSender sender, IGrainFactory grains, string userId, string taskId, ILogger logger)
+    public FleetPushTools(
+        IPushNotificationSender sender, IGrainFactory grains, string userId, string taskId, ILogger logger, FleetPushCounter? counter = null)
     {
+        _counter = counter ?? new FleetPushCounter();
         _sender = sender;
         _grains = grains;
         _userId = userId;
@@ -65,14 +66,9 @@ public sealed class FleetPushTools
         }
 
         // Counted on the send only, as in the chat: unusable text spends nothing. Agents of one task run concurrently.
-        lock (_gate)
+        if (!_counter.TryTake(MaxPushesPerTask))
         {
-            if (_sent >= MaxPushesPerTask)
-            {
-                return $"This task has sent {MaxPushesPerTask} notifications, the limit. Put anything else in the result.";
-            }
-
-            _sent++;
+            return $"This task has sent {MaxPushesPerTask} notifications, the limit. Put anything else in the result.";
         }
 
         await _sender.SendAsync(_userId, new PushMessage(cleanTitle, cleanBody, "", TaskUrl(_taskId)), cancellationToken);
