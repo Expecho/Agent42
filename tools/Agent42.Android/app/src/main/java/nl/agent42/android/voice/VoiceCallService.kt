@@ -12,6 +12,7 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 import nl.agent42.android.Agent42App
 import nl.agent42.android.MainActivity
+import nl.agent42.android.R
 
 /**
  * Keeps the voice call alive with the screen off or another app in front: a microphone foreground service with an
@@ -61,7 +62,7 @@ class VoiceCallService : Service() {
         // system's own Hang up button.
         val caller = Person.Builder().setName("Agent 42 · $title").setImportant(true).build()
         return Notification.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setSmallIcon(R.drawable.ic_stat_agent42)
             .setContentText(text)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_CALL)

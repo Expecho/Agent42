@@ -2,7 +2,7 @@
    Never touches /api (auth-bearing, streaming) and is network-first for
    navigations so the Entra Easy Auth redirect is never masked (see ADR 0002 and
    the gotchas entry on SW navigation caching). */
-const CACHE = "agent42-shell-v95";
+const CACHE = "agent42-shell-v96";
 const SHELL = ["/", "/index.html", "/styles.css", "/shared/themes.css", "/js/agents.js", "/js/artifacts.js", "/js/attachments.js",
   "/js/cache.js", "/js/chatgateway.js", "/js/chatstream.js", "/js/clienttools.js", "/js/composer.js", "/js/confighealth.js", "/js/conversations.js", "/js/dom.js",
   "/js/drawer.js", "/js/editfork.js", "/js/elicitation.js", "/js/export.js", "/js/format.js", "/js/groups.js", "/js/location.js", "/js/main.js", "/js/mcp.js", "/js/mcpapps.js",
@@ -17,7 +17,7 @@ const SHELL = ["/", "/index.html", "/styles.css", "/shared/themes.css", "/js/age
   "/shared/lib/richtext.js", "/shared/lib/artifactpane.js", "/shared/lib/highlight/highlight.min.js",
   "/shared/lib/highlight/github.min.css", "/shared/lib/highlight/github-dark.min.css",
   "/manifest.webmanifest", "/icons/icon-192.png",
-  "/icons/icon-512.png", "/icons/icon-maskable-512.png"];
+  "/icons/icon-512.png", "/icons/icon-maskable-512.png", "/icons/badge-96.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -149,7 +149,7 @@ self.addEventListener("push", (event) => {
     self.registration.showNotification(title, {
       body: data.body || "",
       icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
+      badge: "/icons/badge-96.png",
       data: { conversationId: data.conversationId || "", url: data.url || "" },
     }));
 });
