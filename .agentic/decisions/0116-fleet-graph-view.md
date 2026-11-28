@@ -33,6 +33,7 @@ persisted field, so it is the same on replay, on a reload mid-run and live.
 - Clicking a node opens the existing agent panel; clicking a team box selects the team. Follow live highlights the
   followed team and scrolls it into view when it changes.
 - The graph always draws each team's latest attempt (the attempt tabs belong to Details). The view preference persists across tasks and deep links. A delegation whose agent is not a plan node hangs under the first agent node rather than vanishing. A node whose turn a stop cut off is drawn in the team's state.
+- Amended: there is no fleet-wide graph above the team details any more. The plan card of the selected team and attempt draws that team as the graph (`renderTeamGraph`, replacing the chip flow `renderFlow`); its sub-teams are collapsed boxes that select that team, which is how you move down. Moving up is the breadcrumb. The GroupChat/Magentic limits stay beside it as a text note (`renderFlowNote`). The "collapse done sub-teams past 24 agents" rule is gone with the fleet-wide graph.
 - `/fleet/` is outside the service worker SHELL, so there is no `CACHE` bump.
 
 ## Alternatives considered

@@ -276,15 +276,11 @@ h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .14em; color: v
 .plan-top { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
 .pattern { font-family: var(--mono); font-size: 12px; padding: 2px 8px; border-radius: 5px; background: var(--amber-glow); color: var(--accent); font-weight: 600; }
 .rationale { color: var(--text); font-family: var(--serif); font-size: 15px; }
-.flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 14px 0 4px; }
-.flow .arrow { color: var(--faint); font-family: var(--mono); }
-.flow .group { display: flex; flex-direction: column; gap: 5px; padding: 6px; border: 1px dashed var(--line-2); border-radius: 8px; }
-.flow .group-label { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--faint); text-align: center; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 99px; border: 1px solid color-mix(in srgb, var(--c, var(--line-2)) 55%, transparent); background: color-mix(in srgb, var(--c, var(--panel-2)) 12%, var(--panel)); font-size: 12px; white-space: nowrap; }
 .chip .dot { width: 7px; height: 7px; background: var(--c); opacity: .4; }
 .chip .dot.working { opacity: 1; }
 .chip .dot.done { opacity: 1; background: var(--c); }
-.flow-note { color: var(--muted); font-size: 12px; }
+.flow-note { color: var(--muted); font-size: 12px; margin: 10px 0 4px; }
 
 .agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-top: 14px; }
 .agent { border: 1px solid var(--line); border-top: 3px solid var(--c); border-radius: 8px; padding: 10px 12px; background: var(--panel-2); min-width: 0; }
