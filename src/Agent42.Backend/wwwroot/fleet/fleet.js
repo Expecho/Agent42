@@ -34,7 +34,6 @@
     detailView: loadDetailView(), // "result" | "graph" | "details" (ADR 0116), the open tab, a per-viewer preference kept in localStorage
     search: "",             // the sidebar's task filter
     threadOpen: new Map(),  // first task id -> open, for the follow-up threads the user opened or closed by hand
-    graphOpen: new Set(),   // done sub-teams the graph shows in full although the fleet is large
   };
 
   function loadClarify() {
@@ -59,7 +58,7 @@
 
   function resetTaskState() {
     S.teams.clear(); S.calls.clear(); S.rootTeamId = null; S.live = null;
-    S.budget = null; S.prompt = null; S.panel = null; S.ingested = null; S.recovered = null; S.autoAnswers = []; S.clarify = null; S.graphOpen.clear(); graphScrolledTo = null; dirtyText.clear();
+    S.budget = null; S.prompt = null; S.panel = null; S.ingested = null; S.recovered = null; S.autoAnswers = []; S.clarify = null; graphScrolledTo = null; dirtyText.clear();
     renderPrompt();
     invalidate();
   }
@@ -815,7 +814,7 @@
       return;
     }
     const body = S.detailView === "graph" ? graphTab(task) : S.detailView === "details" ? detailsTab(task) : resultTab(task);
-    const page = h("div", { class: "detail-inner" + (S.detailView === "graph" ? " wide" : "") }, taskHeader(task), tabBar(), h("div", { class: "tab-body" }, body));
+    const page = h("div", { class: "detail-inner" }, taskHeader(task), tabBar(), h("div", { class: "tab-body" }, body));
     if (S.detailView === "graph") showGraph(pane, page); else pane.replaceChildren(page);
   }
 
@@ -864,8 +863,8 @@
       h("button", { class: "more", type: "button", text: "See what the agents are doing →", onclick: () => setDetailView("graph") }));
   }
 
-  // The picture of every team, then the selected team's own details under it (click a team box to pick another).
-  const graphTab = task => S.rootTeamId ? [renderGraph(), h("div", { class: "team-detail" }, teamDetails(task))] : h("div", { class: "muted", text: "No team yet." });
+  // The selected team: its plan card draws the team as a graph, and a sub-team box in it opens that team.
+  const graphTab = task => S.rootTeamId ? h("div", { class: "team-detail" }, teamDetails(task)) : h("div", { class: "muted", text: "No team yet." });
 
   // The task itself: its request, attached files, lessons and requirements. Everything about the team lives on the Graph tab.
   function detailsTab(task) {
@@ -1056,21 +1055,14 @@
       h("span", { class: "dot " + state }), name);
   }
 
-  function renderFlow(team, a, plan) {
-    const names = plan.agents.map(x => x.name);
-    const linkChip = name => chip(a, name, () => openPanel(team.id, a.n, name));
-    const arrow = () => h("span", { class: "arrow", text: "→" });
-    const group = (label, list) => h("div", { class: "group" }, label && h("div", { class: "group-label", text: label }), list.map(linkChip));
-    if (names.length === 1) return h("div", { class: "flow" }, linkChip(names[0]));
+  // The team's shape is drawn once, as the graph in the plan card (ADR 0116). Only what the graph cannot show stays
+  // beside it: the limits of the conversational patterns.
+  function renderFlowNote(plan) {
+    if (plan.agents.length < 2) return null;
     switch (plan.pattern) {
-      case "Concurrent": return h("div", { class: "flow" }, group("in parallel", names));
-      case "Staged": return h("div", { class: "flow" }, (plan.stages || []).map((st, i) => [i > 0 && arrow(), group(`stage ${i + 1}`, st)]));
-      case "GroupChat": return h("div", { class: "flow" }, group("group chat", names),
-        h("div", { class: "flow-note" }, plan.terminationCriteria ? `Ends when: ${plan.terminationCriteria}` : "", h("br"), `Max ${plan.maxGroupChatRounds} turns, a moderator picks who speaks next`));
-      case "Handoff": return h("div", { class: "flow" }, linkChip(names[0]), h("span", { class: "arrow", text: "⇄" }), group("specialists", names.slice(1)));
-      case "Magentic": return h("div", { class: "flow" }, h("span", { class: "chip", text: "Manager" }), arrow(), group("participants", names),
-        h("div", { class: "flow-note", text: `Max ${plan.maxGroupChatRounds} rounds` }));
-      default: return h("div", { class: "flow" }, names.map((n, i) => [i > 0 && arrow(), linkChip(n)]));
+      case "GroupChat": return h("div", { class: "flow-note" }, plan.terminationCriteria ? `Ends when: ${plan.terminationCriteria}` : "", plan.terminationCriteria ? h("br") : null, `Max ${plan.maxGroupChatRounds} turns, a moderator picks who speaks next`);
+      case "Magentic": return h("div", { class: "flow-note", text: `Max ${plan.maxGroupChatRounds} rounds` });
+      default: return null;
     }
   }
 
@@ -1085,7 +1077,8 @@
     return h("div", { class: "card" },
       h("div", { class: "plan-top" }, h("span", { class: "pattern", text: plan.pattern }), h("span", { class: "rationale", text: plan.rationale })),
       a.status === "approval" && h("div", { class: "waiting", style: "margin-top:8px" }, h("span", { class: "dot approval" }), "Waiting for your approval, answer the question at the top."),
-      renderFlow(team, a, plan),
+      renderTeamGraph(team, a),
+      renderFlowNote(plan),
       h("div", { class: "agents" }, plan.agents.map(ag => {
         const tools = yamlTools(ag.yaml);
         const live = agentTurns(a, ag.name).findLast(t => !t.done);
@@ -1151,7 +1144,7 @@
   // A picture of the task: a box per team, a node per agent the planner designed, edges from the plan's pattern, and
   // a sub-team box under the agent that delegated to it. Built only from the state the handlers already fold, so it
   // is the same on replay, on a reload mid-run and live. Node labels are set as text, never as markup.
-  const G = { nodeW: 150, nodeH: 46, gapX: 44, gapY: 18, pad: 12, head: 24, cap: 24 };
+  const G = { nodeW: 150, nodeH: 46, gapX: 44, gapY: 18, pad: 12, head: 24 };
 
   // The agent names of a plan, grouped by rank (a column), plus the pattern's edges between names. Handoff and
   // GroupChat edges are structural (what the pattern means), not observed hops.
@@ -1216,10 +1209,11 @@
     return links;
   }
 
-  function graphTeam(id, subs) {
+  // The latest attempt, unless the plan card asks for the one its attempt tab shows.
+  function graphTeam(id, subs, attempt) {
     const team = S.teams.get(id);
     if (!team) return null;
-    const a = team.attempts[team.attempts.length - 1]; // always the latest attempt; the attempt tabs belong to Details
+    const a = (attempt && team.attempts.find(x => x.n === attempt)) || team.attempts[team.attempts.length - 1];
     const plan = currentPlan(a);
     const m = { id, label: teamLabel(team), status: teamStatus(team), attempt: team.attempts.length > 1 && a ? a.n : 0,
       started: !!a && a.status !== "approval" && a.status !== "planning", attemptN: a?.n, todos: a?.todos || [], ranks: [], links: [], collapsed: false };
@@ -1233,26 +1227,22 @@
 
   const graphAgents = m => m.ranks.flat().reduce((n, c) => n + (c.manager ? 0 : 1) + c.subs.reduce((k, s) => k + graphAgents(s), 0), 0);
 
-  // A large fleet stays legible: a finished sub-team shrinks to one box (click it to open it).
-  function collapseDone(m, root) {
-    for (const cell of m.ranks.flat()) for (const sub of cell.subs) {
-      collapseDone(sub, false);
-      if (sub.status === "done" && !S.graphOpen.has(sub.id)) sub.collapsed = true;
-    }
-    return root;
-  }
-
   // Pure: reads S.teams and S.calls, changes nothing. Delegations are keyed by the attempt their call belongs to, so
   // a retry never shows an earlier attempt's sub-team under the same agent.
-  function buildGraph(rootId) {
+  function delegations() {
     const subs = new Map();
     for (const c of S.calls.values()) {
       if (!c.subTeamId) continue;
       const key = `${c.teamId}|${c.attempt}|${(c.agent || "").toLowerCase()}`;
       subs.set(key, [...(subs.get(key) || []), c.subTeamId]);
     }
-    const root = graphTeam(rootId, subs);
-    if (root && graphAgents(root) > G.cap) collapseDone(root, true);
+    return subs;
+  }
+
+  // The plan card's graph: this team's attempt, its sub-teams as boxes that open that team when clicked.
+  function buildTeamGraph(team, a) {
+    const root = graphTeam(team.id, delegations(), a.n);
+    for (const cell of root?.ranks.flat() || []) for (const sub of cell.subs) { sub.collapsed = true; sub.pick = true; }
     return root;
   }
 
@@ -1337,9 +1327,9 @@
     const m = b.m;
     const label = (m.attempt ? `${m.label} · attempt ${m.attempt}` : m.label) + (m.todos.length ? ` · ${todoCount(m.todos)}` : "");
     const head = h("div", { class: "gcluster-head", text: label, title: label,
-      onclick: () => { if (m.collapsed) { S.graphOpen.add(m.id); invalidate(); } else select(m.id); } });
+      onclick: () => select(m.id) });
     return h("div", { class: `gcluster ${m.status}${S.selectedTeam === m.id ? " sel" : ""}${m.collapsed ? " collapsed" : ""}`, "data-team": m.id,
-      style: `left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px`, title: m.collapsed ? "Done. Click to open this team" : null },
+      style: `left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px`, title: m.pick ? "Click to open this team" : null },
       head,
       m.collapsed && h("div", { class: "gcluster-note", text: `${graphAgents(m)} agents` }),
       !m.collapsed && m.ranks.length === 0 && h("div", { class: "gcluster-note", text: "Planning…" }));
@@ -1357,9 +1347,12 @@
   }
 
   let graphScrolledTo = null;
-  function renderGraph() {
-    const root = buildGraph(S.rootTeamId);
-    if (!root) return h("div", { class: "muted", text: "No team yet." });
+  function renderTeamGraph(team, a) {
+    const root = buildTeamGraph(team, a);
+    return root && root.ranks.length > 0 ? drawGraph(root) : null;
+  }
+
+  function drawGraph(root) {
     const out = { boxes: [], nodes: [], edges: [], w: 0, h: 0 };
     const dim = new Map();
     measureTeam(root, dim);
