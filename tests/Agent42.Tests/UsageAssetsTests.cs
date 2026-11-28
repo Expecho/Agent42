@@ -36,7 +36,8 @@ public sealed class UsageAssetsTests
     public async Task ShowUsage_RendersCacheWrites()
     {
         var thread = await _client.GetStringAsync("/js/thread.js");
-        var send = await _client.GetStringAsync("/js/send.js");
+        // The event dispatcher moved out of send() into chatstream.js (ADR 0153).
+        var send = await _client.GetStringAsync("/js/chatstream.js");
 
         Assert.Contains(
             "export function showUsage(msg, { inputTokens, outputTokens, cachedTokens, cacheWriteTokens, costUsd, costStatus })",

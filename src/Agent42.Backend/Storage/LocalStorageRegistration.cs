@@ -72,6 +72,7 @@ public static class LocalStorageRegistration
         services.AddSingleton<IAttachmentStore, FileAttachmentStore>();
         services.AddSingleton<ISkillPackageStore, FileSkillPackageStore>();
         services.AddSingleton<IFleetBlobs, FileFleetBlobs>();
+        services.AddSingleton<IChatTurnBlobs, FileChatTurnBlobs>();
         services.AddSingleton<ICopilotSessionStore, FileCopilotSessionStore>();
 
         services.AddDataProtection()

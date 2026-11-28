@@ -186,4 +186,8 @@ public sealed record AgentStreamEvent(
     [property: Id(22)] McpAppResult? McpApp = null,
     // Set on a Routed event (ADR 0137): the qualified id of the model the Auto router chose. Null elsewhere so the NDJSON writer
     // omits it. Trailing default so every existing construction keeps compiling.
-    [property: Id(23)] string? Model = null);
+    [property: Id(23)] string? Model = null,
+    // Stamped by the chat turn pump (ADR 0153): this event's position in its turn, gapless from 1, so a browser that lost
+    // its socket resumes "after N". Null on every path that doesn't go through the pump (Android, gateway, MCP) so the
+    // NDJSON writer omits it. Trailing default so every existing construction keeps compiling.
+    [property: Id(24)] long? Seq = null);

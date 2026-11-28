@@ -82,17 +82,24 @@ public sealed partial class CannedChatClient : IChatClient
         }
 
         // A research loop's first iteration drafts; the answer comes once the loop's feedback says a step is left.
+        // Paced for the resumable-turn e2e (ADR 0153): a reply that is still arriving after a reload or when a second page opens.
+        var slow = prompt.Contains(SlowMarker, StringComparison.OrdinalIgnoreCase);
         var reply = options?.Tools?.Any(t => t.Name == "todos_add") == true && !messages.Any(IsLoopFeedback)
             ? $"Drafting an answer to *{prompt}* from the first sources — one step of the plan is still open."
             : ClientToolNote(messages, options) + SelectReply(prompt);
         foreach (var chunk in reply.Split(' ').Chunk(4).Select(words => string.Join(' ', words) + " "))
         {
             yield return new ChatResponseUpdate(ChatRole.Assistant, chunk);
-            await Task.Delay(30, cancellationToken);
+            await Task.Delay(slow ? SlowChunkDelayMs : 30, cancellationToken);
         }
 
         yield return new ChatResponseUpdate(ChatRole.Assistant, [BuildUsage(260, 180)]);
     }
+
+    /// <summary>Prompt marker that slows the canned reply to <see cref="SlowChunkDelayMs"/> per chunk (about ten seconds in all).</summary>
+    public const string SlowMarker = "take your time";
+
+    private const int SlowChunkDelayMs = 400;
 
     /// <summary>
     /// Prompt marker that makes the canned reply stream reasoning ahead of its text. A PHRASE, matching the

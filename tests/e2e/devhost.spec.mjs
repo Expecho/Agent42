@@ -68,3 +68,86 @@ test("renders the shell offline once installed", async ({ page, context }) => {
   await page.reload();
   await expect(page.locator("#promptInput")).toBeVisible();
 });
+
+// ADR 0153: a turn in flight can be rejoined. The DevHost's canned model streams a "take your time" reply at ~400 ms per
+// chunk (about ten seconds), so a reload or a second page lands in the middle of it.
+const slow = (tag) => `take your time ${tag}`;
+
+async function send(page, text) {
+  const prompt = page.locator("#promptInput");
+  await expect(prompt).toBeEnabled();
+  await prompt.fill(text);
+  await prompt.press("Enter");
+}
+
+async function openConversation(page, text) {
+  await page.goto("/");
+  await page.locator(".conv", { hasText: text }).first().click();
+}
+
+test("a reload mid-reply rejoins the turn: the full reply, one bubble", async ({ page }) => {
+  const tag = `reload-${Date.now()}`;
+  await page.goto("/");
+  await send(page, slow(tag));
+  await expect(page.locator(".msg").last()).toContainText("You asked", { timeout: 30_000 });
+
+  await page.reload();
+  await page.locator(".conv", { hasText: tag }).first().click();
+
+  // Still streaming when it reopens (the stop control is the proof), then the whole reply, as ONE assistant bubble.
+  await expect(page.locator("#stopBtn")).toBeVisible();
+  await expect(page.locator("#stopBtn")).toBeHidden({ timeout: 40_000 });
+  await expect(page.locator(".msg")).toHaveCount(2);
+  await expect(page.locator(".msg").last()).toContainText("42");
+});
+
+test("a second page attaches to the turn and stop works from it", async ({ page, context }) => {
+  const tag = `second-${Date.now()}`;
+  await page.goto("/");
+  await send(page, slow(tag));
+  await expect(page.locator(".msg").last()).toContainText("You asked", { timeout: 30_000 });
+
+  const second = await context.newPage();
+  await openConversation(second, tag);
+  await expect(second.locator("#stopBtn")).toBeVisible();
+
+  await second.locator("#stopBtn").click();
+
+  // The turn ends for both pages.
+  await expect(second.locator("#stopBtn")).toBeHidden({ timeout: 20_000 });
+  await expect(page.locator("#stopBtn")).toBeHidden({ timeout: 20_000 });
+});
+
+test("a passive second page never runs a client tool the first page is showing", async ({ page, context }) => {
+  test.setTimeout(90_000); // a confirm wait, then the ~10 s slow reply
+  const tag = `confirm-${Date.now()}`;
+  await page.goto("/");
+  await send(page, `ask me to confirm ${slow(tag)}`);
+  await expect(page.locator("#confirmActionDialog[open]")).toBeVisible({ timeout: 30_000 });
+
+  const second = await context.newPage();
+  await openConversation(second, tag);
+  await expect(second.locator("#stopBtn")).toBeVisible();
+  await second.waitForTimeout(1500);
+  await expect(second.locator("#confirmActionDialog[open]")).toHaveCount(0);
+
+  await page.locator("#confirmActionApproveBtn").click();
+
+  await expect(page.locator("#stopBtn")).toBeHidden({ timeout: 40_000 });
+  await expect(second.locator("#stopBtn")).toBeHidden({ timeout: 40_000 });
+  await expect(page.locator(".msg").last()).toContainText("approved");
+});
+
+test("opening a conversation whose turn already finished shows one bubble pair", async ({ page, context }) => {
+  const tag = `finished-${Date.now()}`;
+  await page.goto("/");
+  await send(page, `what is the answer ${tag}`);
+  await expect(page.locator(".msg").last()).toContainText("42", { timeout: 30_000 });
+  await expect(page.locator("#stopBtn")).toBeHidden();
+
+  const second = await context.newPage();
+  await openConversation(second, tag);
+
+  await expect(second.locator(".msg")).toHaveCount(2);
+  await expect(second.locator(".msg").last()).toContainText("42");
+});

@@ -22,7 +22,7 @@ The *continuous* toggle is disabled for the research agent, because its turns ar
 
 ## Limits you may notice
 
-- A research turn often outlasts the page's recovery wait. If you background the tab, it can show "Transmission failed" even though it completes. Reload to see the answer.
+- If you background the tab, the page rejoins the running research turn when you come back. Only when it cannot (the turn failed, the server restarted, or it is an incognito chat opened elsewhere) can it show "Transmission failed" even though it completes; reload to see the answer.
 - Called through the agent MCP endpoint, a research turn can exceed the two-minute wait, and the usual "still running" behavior applies.
 - A model that doesn't support tools gets a plain agent without the checklist.
 - The judge uses the conversation's own provider, so nothing new leaves your setup, but it adds one model call per finished round. If you turn on memory, it also runs once per round.

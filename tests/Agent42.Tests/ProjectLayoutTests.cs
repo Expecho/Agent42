@@ -94,7 +94,7 @@ public sealed class ProjectLayoutTests
         {
             "Agent42.Agents",
             [
-                "Artifacts", "Attachments", "ChatGateway", "ClientTools", "Conversations", "Copilot", "Documents", "Email", "Fleet", "ImageGeneration",
+                "Artifacts", "Attachments", "ChatGateway", "ChatTurns", "ClientTools", "Conversations", "Copilot", "Documents", "Email", "Fleet", "ImageGeneration",
                 "Location", "Mcp", "Memory", "Models", "PromptCaching", "Push", "Research", "Scheduling", "Search", "SharedState",
                 "Sharing", "Skills", "Speech", "StoredAgents", "Telemetry", "Tools", "UserSkills", "Users", "Web", "Webhooks",
             ]
@@ -166,6 +166,7 @@ public sealed class ProjectLayoutTests
     {
         { "Conversations/AgentApi.Conversations.cs", "MapConversationEndpoints" },
         { "Conversations/AgentApi.ChatGroups.cs", "MapChatGroupEndpoints" },
+        { "Conversations/AgentApi.ChatTurns.cs", "MapChatTurnEndpoints" },
         { "Attachments/AgentApi.Attachments.cs", "MapAttachmentEndpoints" },
         { "Sharing/AgentApi.Sharing.cs", "MapSharingEndpoints" },
         { "Models/AgentApi.Models.cs", "MapModelEndpoints" },

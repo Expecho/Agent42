@@ -162,6 +162,10 @@ builder.Services.AddCopilotAgents(builder.Configuration);
 // See FleetRegistration, and ADR 0097 for the Copilot fleet agents' trust boundary.
 builder.Services.AddAgentFleet(builder.Configuration);
 
+// The resumable chat turn (ADR 0153): a turn is pumped in the Backend and its replay log kept in the chat-turns Blob
+// container (files when self-hosting), so a dead socket, an F5 or a second device can rejoin a turn in flight.
+builder.Services.AddChatTurns(builder.Configuration);
+
 // Web Push notifications (ADR 0028): a push when an agent replies on an async path (a fired reminder or an
 // agent-run) while the user is away. Optional, off without the VAPID key; see WebPushRegistration.
 builder.Services.AddWebPush(builder.Configuration);

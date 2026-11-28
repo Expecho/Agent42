@@ -40,19 +40,21 @@ public sealed class RichTextAssetsTests
         Assert.True(elseAt >= 0, "setAgentMarkdown lost its non-caret branch");
         Assert.True(enhanceAt > elseAt, "enhance must run only in the non-caret (final) branch");
 
-        var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt, replay = null)");
-        var loop = StaticAssetsServerFixture.Body(send, "for (;;)");
+        // The stream's event dispatcher (chatstream.js, ADR 0153), where every per-chunk render happens.
+        var loop = StaticAssetsServerFixture.Body(app, "function dispatch(chunk, turn, ctx, mayRunTools)");
         var loopCalls = Count(loop, "setAgentMarkdown(");
         Assert.True(loopCalls >= 1, "the stream loop no longer renders chunks");
-        Assert.Equal(loopCalls, Count(loop, "setAgentMarkdown(agentMsg, answer, { caret: true })"));
+        Assert.Equal(loopCalls, Count(loop, "setAgentMarkdown(agentMsg, turn.answer, { caret: true })"));
 
-        // The stream end renders final (no caret) right after the loop.
-        var afterLoop = send[(send.IndexOf(loop, StringComparison.Ordinal) + loop.Length)..];
-        Assert.StartsWith("setAgentMarkdown(agentMsg, answer);", afterLoop.TrimStart());
+        // The stream end renders final (no caret): the success tail, shared by a stream that ended and a rejoined one.
+        var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt, replay = null)");
+        var tail = StaticAssetsServerFixture.Body(send, "const finishLiveReply = () =>");
+        Assert.StartsWith("setAgentMarkdown(agentMsg, turn.answer);", tail[(tail.IndexOf('{') + 1)..].TrimStart());
 
-        // Outside the loop, the only caret call in the whole app is the initial empty bubble.
+        // Outside the dispatcher, the only caret calls in the whole app are the initial empty bubbles: the one send() adds, and
+        // the one a passive attach to a turn in flight adds (ADR 0153).
         Assert.Contains("setAgentMarkdown(agentMsg, \"\", { caret: true })", send);
-        Assert.Equal(loopCalls + 1, Count(app, "caret: true"));
+        Assert.Equal(loopCalls + 2, Count(app, "caret: true"));
     }
 
     private static int Count(string source, string value)

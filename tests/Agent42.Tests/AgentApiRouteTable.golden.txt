@@ -19,6 +19,8 @@ GET /api/agents [DisableCookieRedirectMetadata,HttpMethodMetadata,ParameterBindi
 GET /api/agents/{id}/webhook [HttpMethodMetadata,ParameterBindingMetadata,RouteDiagnosticsMetadata]
 GET /api/chat-connections [HttpMethodMetadata,ParameterBindingMetadata,RouteDiagnosticsMetadata]
 GET /api/chat/{conversationId}/pending-tool-calls [HttpMethodMetadata,ParameterBindingMetadata,RouteDiagnosticsMetadata]
+GET /api/chat/{conversationId}/turn [HttpMethodMetadata,ParameterBindingMetadata,RouteDiagnosticsMetadata]
+GET /api/chat/{conversationId}/turns/{turnId}/stream [HttpMethodMetadata,ParameterBindingMetadata,RouteDiagnosticsMetadata]
 GET /api/config-health [HttpMethodMetadata,ParameterBindingMetadata,RouteDiagnosticsMetadata]
 GET /api/conversation-groups [DisableCookieRedirectMetadata,HttpMethodMetadata,ParameterBindingMetadata,ProducesResponseTypeMetadata,RouteDiagnosticsMetadata]
 GET /api/conversations [DisableCookieRedirectMetadata,HttpMethodMetadata,ParameterBindingMetadata,ProducesResponseTypeMetadata,RouteDiagnosticsMetadata]

@@ -47,11 +47,13 @@ public sealed class TopbarActionsAssetsTests
 
         // In send() it must sit on the success path, gated on !ephemeral — NOT beside the incognitoBtn
         // lock, which runs before the fetch and would light the button up on a turn that never landed.
+        // The success tail is the local `finishLiveReply` (ADR 0153: shared by a stream that ended and one that was rejoined), so
+        // the gate is that it is CALLED only after the fetch.
         var send = StaticAssetsServerFixture.Body(app, "export async function send(prompt, replay = null)");
         Assert.Contains("if (!ephemeral) setTopbarShare(", send);
         var lockAt = send.IndexOf("incognitoBtn.disabled = true", StringComparison.Ordinal);
         var fetchAt = send.IndexOf("await fetch(", StringComparison.Ordinal);
-        var enableAt = send.IndexOf("if (!ephemeral) setTopbarShare(", StringComparison.Ordinal);
+        var enableAt = send.IndexOf("    finishLiveReply();", StringComparison.Ordinal);
         Assert.True(lockAt < fetchAt, "the incognito lock is expected before the fetch");
         Assert.True(enableAt > fetchAt, "share must be enabled after the fetch, on the success path");
     }

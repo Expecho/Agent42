@@ -6,7 +6,7 @@ tags: [frontend, pwa, mobile, conversations, streaming, resilience, ux]
 supersedes: []
 extends: [0004, 0032]
 amends: []
-amended_by: [0080, 0082, 0089]
+amended_by: [0080, 0082, 0089, 0153]
 ---
 
 # Recover a reply whose stream died while the app was backgrounded
@@ -105,3 +105,10 @@ socket mid-reply with `SO_LINGER 0`, and asserts the reply lands in the history 
   the full persisted answer, no `is-error`, copy button present, share enabled. With `send.js` reverted,
   the same script yields `is-error` and *"Transmission failed. network error"* — the reported bug,
   reproduced and then removed. Shell cache bumped `agent42-shell-v17` → `-v18`.
+
+## Amendment (ADR 0153)
+
+A turn can now be REJOINED, not only recovered: the page keeps the id of the last event it saw and reattaches after a dead socket,
+an F5 or on another device, and the server replays what was missed. The polling recovery described above is demoted to the
+fallback for when a reattach is impossible (404, an interrupted or failed turn, a truncated log, an incognito turn on another
+replica, the kill switch). The guarantee that a turn outlives its client is now explicit (a detached pump), not an accident of Kestrel.

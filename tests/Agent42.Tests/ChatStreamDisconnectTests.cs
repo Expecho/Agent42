@@ -26,7 +26,12 @@ namespace Agent42.Tests;
 /// would discard a reply already paid for, and <c>recoverPersistedReply</c> in
 /// <c>wwwroot/js/send.js</c> would have nothing to adopt.</para>
 ///
-/// <para><b>Nothing in the endpoint enforces this today — that is the point.</b> Kestrel silently
+/// <para><b>Since ADR 0153 the pump enforces it explicitly:</b> the turn is drained by a detached
+/// <c>ChatTurnPump</c> whose lifetime is the host's <c>ApplicationStopping</c>, never <c>RequestAborted</c>, and this host registers
+/// it. The paragraph below describes the older direct-drain path, which a host without the pump (or
+/// <c>ChatTurns:Enabled=false</c>) still takes.</para>
+///
+/// <para><b>On that direct path nothing in the endpoint enforces this — that is the point.</b> Kestrel silently
 /// DISCARDS writes to an aborted connection instead of faulting them (measured here: a real RST never
 /// produced an exception from <c>Response.WriteAsync</c>), so the <c>await foreach</c> keeps draining on
 /// its own and the turn completes. The behaviour is therefore free but load-bearing and entirely
@@ -73,6 +78,8 @@ public sealed class ChatStreamDisconnectTests : IAsyncLifetime
         appBuilder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
         appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
         appBuilder.Services.AddDocumentRagFakes();
+        // The pump (ADR 0153): the turn must still survive the socket dying, now because the pump is detached from the request.
+        appBuilder.Services.AddChatTurnsInMemory(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
         appBuilder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
         _app = appBuilder.Build();
         _app.MapAgentApi();
