@@ -134,6 +134,21 @@ public sealed class ComposeFileTests
         Assert.Contains(".env", File.ReadAllLines(Path.Combine(Root, ".gitignore")).Select(l => l.Trim()));
     }
 
+    // ADR 0155: an unset hosted search key must reach the app as an empty string (which the app treats as absent), never
+    // as a hard compose error: the keys are optional.
+    [Theory]
+    [InlineData("compose.yaml")]
+    [InlineData("compose.azure.yaml")]
+    public void HostedSearchKeys_AreOptional_EmptyMeansAbsent(string file)
+    {
+        var text = File.ReadAllText(Path.Combine(Root, file));
+
+        Assert.Contains("WebSearch__Tavily__ApiKey: ${TAVILY_API_KEY:-}", text, StringComparison.Ordinal);
+        Assert.Contains("WebSearch__Firecrawl__ApiKey: ${FIRECRAWL_API_KEY:-}", text, StringComparison.Ordinal);
+        Assert.Contains("WebSearch__Providers: ${WEB_SEARCH_PROVIDERS:-}", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("${TAVILY_API_KEY:?", text, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void TheBuildContexts_Exist()
     {

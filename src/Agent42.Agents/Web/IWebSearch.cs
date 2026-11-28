@@ -1,13 +1,15 @@
 namespace Agent42.Agents;
 
 /// <summary>
-/// Runs a web search and returns ranked results for the model to read (ADR 0011). Backed by a
-/// self-hosted SearXNG instance, so a query needs no API key, carries no per-user attribution and
-/// costs nothing. It is <b>not</b> private: SearXNG is a <i>meta</i>search engine — it forwards the
-/// query to upstream engines (Google, DuckDuckGo, Bing — ADR 0060) from the container's IP. Treat a search query as
-/// leaving our infrastructure, because it does.
+/// Runs a web search and returns ranked results for the model to read (ADR 0011). By default backed by a
+/// self-hosted SearXNG instance, so a query needs no API key and carries no per-user attribution. It is
+/// <b>not</b> private: SearXNG is a <i>meta</i>search engine — it forwards the query to upstream engines (Google,
+/// DuckDuckGo, Bing — ADR 0060) from the container's IP. When the operator sets a Tavily or Firecrawl key, a fallback
+/// chain tries those first (ADR 0155) and the query goes to that vendor, which can attribute it to the operator's
+/// account. Treat a search query as leaving our infrastructure, because it does.
 ///
-/// Production talks to the SearXNG sidecar over localhost (<c>SearxngWebSearch</c>); local dev and
+/// Production talks to the SearXNG sidecar over localhost (<c>SearxngWebSearch</c>), alone or as the last member of
+/// that chain (<c>FallbackWebSearch</c>); local dev and
 /// tests use an in-memory implementation (<see cref="InMemoryWebSearch"/>) — the same real/in-memory
 /// split as <see cref="IAttachmentStore"/> and <see cref="IDocumentIndex"/>.
 /// </summary>

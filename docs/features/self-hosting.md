@@ -70,7 +70,7 @@ session files, the Data Protection key ring) and `agent42-copilot` (chat workspa
   `Copilot__BuiltInToolsEnabled=false`; the Copilot kind still works with Agent 42's own tools. Flip it only behind
   an authenticating proxy.
 - **One replica.** Run one `app` container per database (the gateway lock stops a second one from running your bots twice).
-- **Web search is not private.** SearXNG forwards each query to public search engines.
+- **Web search is not private.** SearXNG forwards each query to public search engines. Optionally set `TAVILY_API_KEY` and/or `FIRECRAWL_API_KEY` in `.env` to try those providers first; queries then go to that vendor (ADR 0155).
 - **Signal is off** (it needs the `signalEnabled` deploy gate and an Azure Files volume). Telegram, Slack and Discord work.
 
 ## Settings

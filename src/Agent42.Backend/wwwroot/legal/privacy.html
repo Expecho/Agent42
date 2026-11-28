@@ -61,7 +61,8 @@
       <li><strong>MCP servers you connect.</strong> They receive whatever the model sends to their tools.</li>
       <li><strong>Web search.</strong> Search queries go through a search proxy that we host ourselves and are
         forwarded to Google, Bing and DuckDuckGo. Those engines see the query, but not your identity or your IP
-        address.</li>
+        address. If the operator has configured Tavily or Firecrawl, the query is sent to them first, under the
+        operator’s account, and they see the query but not your identity.</li>
       <li><strong>Voice input.</strong> Speech recognition runs in your browser. Some browsers, such as Chrome, send
         the audio to their own vendor to transcribe it. Read-aloud uses the speech model of your own provider.</li>
       <li><strong>Location.</strong> Only when you have allowed it and the model asks for it, your browser shares your

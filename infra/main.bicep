@@ -50,6 +50,17 @@ param githubOAuthClientSecret string = ''
 param hindsightApiKey string = ''
 
 @secure()
+@description('API key for Tavily web search (ADR 0155 - the TAVILY_API_KEY GitHub Actions secret). OPTIONAL like googleMapsApiKey/hindsightApiKey (no @minLength, empty default): an absent key must NOT fail the deployment. Not on the availability path: with no key the provider is skipped and search runs on the SearXNG sidecar. SETTING it sends web search queries to Tavily.')
+param tavilyApiKey string = ''
+
+@secure()
+@description('API key for Firecrawl web search (ADR 0155 - the FIRECRAWL_API_KEY GitHub Actions secret). OPTIONAL like googleMapsApiKey/hindsightApiKey (no @minLength, empty default): an absent key must NOT fail the deployment. Not on the availability path: with no key the provider is skipped and search runs on the SearXNG sidecar. SETTING it sends web search queries to Firecrawl.')
+param firecrawlApiKey string = ''
+
+@description('Web search provider order (ADR 0155): comma-separated names from tavily, firecrawl; searxng is always last. OPTIONAL: when empty WebSearch__Providers is not emitted and the default order applies.')
+param webSearchProviders string = ''
+
+@secure()
 @description('Connection string of the existing Application Insights resource agent-42-appinsights (the APPLICATIONINSIGHTS_CONNECTION_STRING GitHub Actions secret). OPTIONAL, like googleMapsApiKey: when empty the app exports to the OTLP collector only. When set, traces with chat content stripped and metrics also go to Application Insights; logs never do. The resource is not managed here: it already exists, and connection-string ingestion needs no role assignment.')
 param appInsightsConnectionString string = ''
 
@@ -285,6 +296,9 @@ module containerApp 'modules/container-app.bicep' = {
     googleMapsApiKey: googleMapsApiKey
     githubOAuthClientSecret: githubOAuthClientSecret
     hindsightApiKey: hindsightApiKey
+    tavilyApiKey: tavilyApiKey
+    firecrawlApiKey: firecrawlApiKey
+    webSearchProviders: webSearchProviders
     appInsightsConnectionString: appInsightsConnectionString
     vapidPrivateKey: vapidPrivateKey
     mailgunSigningKey: mailgunSigningKey

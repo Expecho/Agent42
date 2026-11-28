@@ -475,11 +475,26 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   writes the search query, `web_search` is an outbound text channel that the `read_web_document` URL
   allowlist does **not** cover — a prompt-injected page could put conversation text in a query. The skill
   instructs the model never to do that; it is mitigation, not prevention (ADR 0011).
+  **Since ADR 0155 this holds for the default only:** with an operator `WebSearch:Tavily:ApiKey` or `WebSearch:Firecrawl:ApiKey`
+  set, queries also go to that vendor, which has an API key, a per-query credit cost and attributes the query to the operator's
+  account. SearXNG is then the never-benched last resort.
 - **Evidence:** `infra/searxng/settings.yml` (the `keep_only:` list **and** the `engines:` override),
   `src/Agent42.Agents/Skills/websearch/SKILL.md`, `src/Agent42.Agents/Web/IWebSearch.cs`,
   `.agentic/decisions/0011-web-search-self-hosted-searxng-sidecar.md`,
   `.agentic/decisions/0060-enable-google-and-bing-search-engines.md`
 - **Verified:** 2026-11-24
+
+### Web search chain: empty results are not a failure, SearXNG is never benched, and the final message is curated
+
+- **Claim:** three invariants of `FallbackWebSearch` (ADR 0155) look like bugs and are not. (a) A keyed provider that answers
+  with **zero results** ends the chain; it is a success, so SearXNG is not asked for that query (a recorded trade-off). (b) The
+  `searxng` member has `CanBeBenched = false` and runs on the caller's token rather than the hosted budget, so a chain always has
+  a last resort and there is no "all benched" state; do not add one, because ignoring cooldowns re-hits exhausted keys and logs
+  Error on every call. (c) `WebTools.WebSearchAsync` returns `ex.Message` **to the model**, so the chain's final message is
+  provider names and failure kinds only: never put a response body, URL, key or query in a provider's exception.
+- **Evidence:** `src/Agent42.Backend/Web/FallbackWebSearch.cs`, `src/Agent42.Backend/Web/WebSearchProviderSupport.cs`,
+  `tests/Agent42.Tests/FallbackWebSearchTests.cs` (`EmptyResults_AreNotAFailure`, `Searxng_IsNeverBenched`, `AllFailed_MessageIsCurated`)
+- **Verified:** 2026-11-28
 
 ### SearXNG `keep_only` enables nothing — and `inactive` is not `disabled`
 

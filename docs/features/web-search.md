@@ -6,6 +6,8 @@ The assistant can search the web for current facts, prices and recent events. It
 
 **Web search** is a tool you can switch on or off. See [Tool selection](tool-selection.md). Results come from a search service built into Agent 42, so you don't need an API key.
 
+An operator can add hosted search providers in front of it: **Tavily** and **Firecrawl**, each with its own key (`WebSearch:Tavily:ApiKey`, `WebSearch:Firecrawl:ApiKey`; in Azure the `TAVILY_API_KEY` and `FIRECRAWL_API_KEY` secrets; in Docker the same names in `.env`). They are tried in the order of `WebSearch:Providers` (default `tavily,firecrawl`), then the built-in service. A provider that fails (out of credits, rate limited, bad key, timeout) is skipped for a while, and the next one answers, so search keeps working. A provider that answers with no results is not treated as a failure. **Setting a key sends your search queries to that vendor.** Preferences → Configuration shows which keys are set and which providers are currently skipped.
+
 On models that use the Responses API, the model provider's own web search is used instead. You use it the same way.
 
 ## Use it

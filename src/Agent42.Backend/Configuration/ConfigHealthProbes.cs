@@ -62,6 +62,11 @@ public static partial class ConfigHealth
             await RunAsync(ProbeHindsight, probes.Hindsight, hindsight);
         }
 
+        if (byKey.TryGetValue(ProbeWebSearchChain, out var chain))
+        {
+            await RunAsync(ProbeWebSearchChain, probes.WebSearchChain, chain);
+        }
+
         if (overrides.Count == 0)
         {
             return staticReport;
@@ -89,7 +94,8 @@ public sealed record ProbeResult(string Status, string Message);
 public sealed record ConfigHealthProbeSet(
     Func<CancellationToken, Task<ProbeResult>>? SearXng,
     Func<CancellationToken, Task<ProbeResult>>? Geocoding,
-    Func<CancellationToken, Task<ProbeResult>>? Hindsight)
+    Func<CancellationToken, Task<ProbeResult>>? Hindsight,
+    Func<CancellationToken, Task<ProbeResult>>? WebSearchChain = null)
 {
     /// <summary>
     /// Builds the real probes from the already-registered clients — each resolved <b>optionally</b>
@@ -115,7 +121,31 @@ public sealed record ConfigHealthProbeSet(
             // CreateClient would otherwise hand back a resilience-pipeline-inheriting client.
             Hindsight: httpFactory is null || string.IsNullOrWhiteSpace(hindsightKey)
                 ? null
-                : ct => ProbeHindsightAsync(httpFactory, config, ct));
+                : ct => ProbeHindsightAsync(httpFactory, config, ct),
+            WebSearchChain: services.GetService<WebSearchCooldowns>() is { } cooldowns
+                ? _ => Task.FromResult(WebSearchChainState(cooldowns, config))
+                : null);
+    }
+
+    // The chain's state from the in-memory cooldowns (ADR 0155). Calls no vendor, so it is free. Kinds and times only:
+    // no key, no URL, no query. Nothing is shown unless a keyed provider is in the effective chain.
+    public static ProbeResult WebSearchChainState(WebSearchCooldowns cooldowns, IConfiguration config)
+    {
+        var order = WebSearchChainRegistration.ParseOrder(config["WebSearch:Providers"], out _)
+            .Where(n => n != SearxngSearchProvider.Provider
+                && !string.IsNullOrWhiteSpace(config[$"WebSearch:{char.ToUpperInvariant(n[0])}{n[1..]}:ApiKey"]))
+            .ToList();
+        if (order.Count == 0)
+        {
+            return new ProbeResult(ConfigHealth.Ok, "no hosted provider configured — the SearXNG sidecar answers");
+        }
+
+        var parts = order.Select(name => cooldowns.TryGetBenched(name, out var b)
+            ? $"{name} benched: {FallbackWebSearch.Describe(b.Kind)} until {b.Until:HH:mm} UTC"
+            : $"{name} ok");
+        var anyBenched = order.Any(n => cooldowns.TryGetBenched(n, out _));
+        return new ProbeResult(anyBenched ? ConfigHealth.Warning : ConfigHealth.Ok,
+            string.Join(", ", parts) + ", searxng fallback");
     }
 
     // SearXNG healthy sidecars answer ?format=json with 403 when json is not in `search.formats` (gotcha),

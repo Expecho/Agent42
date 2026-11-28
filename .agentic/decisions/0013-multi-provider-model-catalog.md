@@ -3,10 +3,12 @@ id: 0013
 date: 2026-07-14
 status: accepted
 tags: [models, providers, github-models, openai-compatible, config, security, data-egress, capabilities]
-amended_by: [0017, 0018, 0020, 0084, 0094, 0095, 0096, 0097, 0108, 0144]   # 0084 artifacts: accepted self-navigation egress from sandboxed artifact pages; 0094 outbound webhooks for stored agents; 0097 agent fleet Copilot URL/shell egress; 0108 copilot agents on the user's GitHub Copilot plan send conversation content to GitHub; 0144 fleet recall queries to Hindsight, fleet prompts to the image provider, fleet push text
+amended_by: [0017, 0018, 0020, 0084, 0094, 0095, 0096, 0097, 0108, 0144, 0155]   # 0084 artifacts: accepted self-navigation egress from sandboxed artifact pages; 0094 outbound webhooks for stored agents; 0097 agent fleet Copilot URL/shell egress; 0108 copilot agents on the user's GitHub Copilot plan send conversation content to GitHub; 0144 fleet recall queries to Hindsight, fleet prompts to the image provider, fleet push text; 0155 web search queries to Tavily or Firecrawl when the operator sets a key
 ---
 
 # A provider/model catalog: any OpenAI-compatible endpoint, named by a qualified `provider:model` id
+
+> **Amended by [ADR 0155](0155-web-search-provider-fallback-chain.md) (2026-11-28) — a new egress destination.** When the operator sets a Tavily or Firecrawl key, web search queries go to that vendor. Opt-in by operator key, absent by default.
 
 > **Amended by [ADR 0094](0094-outbound-webhooks-for-stored-agents.md) (2026-10-10) — a new egress destination.**
 > A stored agent's owner-configured webhook receives every bound, persisted turn's prompt and reply, signed and

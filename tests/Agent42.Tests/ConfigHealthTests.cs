@@ -262,6 +262,51 @@ public sealed class ConfigHealthTests
         Assert.Equal(ConfigHealth.Skipped, Find(probed, "probe:hindsight").Status);
     }
 
+    // ADR 0155: hosted web-search keys are optional (absent is a warning, never an error) and never echoed; the chain
+    // state is a free probe that reads the cooldowns and calls no vendor.
+    [Fact]
+    public void WebSearchKeys_ArePresenceChecked_AndNeverEchoed()
+    {
+        var missing = ConfigHealth.BuildStatic(Config(), Env(), Push());
+        var set = ConfigHealth.BuildStatic(Config(("WebSearch:Tavily:ApiKey", "tvly-SECRET")), Env(), Push());
+
+        Assert.Equal(ConfigHealth.Warning, Find(missing, "WebSearch:Tavily:ApiKey").Status);
+        Assert.Equal(ConfigHealth.Ok, Find(set, "WebSearch:Tavily:ApiKey").Status);
+        Assert.DoesNotContain("tvly-SECRET", JsonSerializer.Serialize(set));
+        var chain = Find(set, "probe:websearch-chain");
+        Assert.Equal(ConfigHealth.Skipped, chain.Status);
+        Assert.False(chain.Billable);
+    }
+
+    [Fact]
+    public async Task WebSearchChainProbe_ReportsBenchedProviders_WithoutCallingAVendor()
+    {
+        var config = Config(("WebSearch:Tavily:ApiKey", "tvly-SECRET"), ("WebSearch:Firecrawl:ApiKey", "fc-SECRET"));
+        var cooldowns = new WebSearchCooldowns();
+        cooldowns.Bench("tavily", WebSearchFailureKind.Exhausted);
+        var services = new ServiceCollection().AddSingleton(cooldowns).BuildServiceProvider();
+        var report = ConfigHealth.BuildStatic(config, Env(), Push());
+
+        var probed = await ConfigHealth.ProbeAsync(report, services, config);
+        var chain = Find(probed, "probe:websearch-chain");
+
+        Assert.Equal(ConfigHealth.Warning, chain.Status);
+        Assert.Contains("tavily benched: credits-exhausted until", chain.Message);
+        Assert.Contains("firecrawl ok", chain.Message);
+        var json = JsonSerializer.Serialize(probed);
+        Assert.DoesNotContain("tvly-SECRET", json);
+        Assert.DoesNotContain("fc-SECRET", json);
+    }
+
+    [Fact]
+    public void WebSearchChainState_WithNoHostedKey_SaysTheSidecarAnswers()
+    {
+        var result = ConfigHealthProbeSet.WebSearchChainState(new WebSearchCooldowns(), Config());
+
+        Assert.Equal(ConfigHealth.Ok, result.Status);
+        Assert.Contains("SearXNG", result.Message);
+    }
+
     // Development renders the prod-infra checks as n-a rather than error/warning noise.
     [Fact]
     public void Development_RendersInfraAsNotApplicable()

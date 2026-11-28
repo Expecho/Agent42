@@ -46,6 +46,8 @@ doing its own Entra sign-in, see [Docker with Entra sign-in](../setup/docker-ent
 | `GOOGLE_MAPS_API_KEY` | no | Location returns coordinates without an address. |
 | `GH_OAUTH_CLIENT_SECRET` | no | "Sign in with GitHub" is hidden. |
 | `HINDSIGHT_API_KEY` | no | No long-term memory, and no calls are made. Setting it turns on always-on egress. |
+| `TAVILY_API_KEY` | no | Tavily is skipped and search stays on SearXNG. Setting it sends web search queries to Tavily (ADR 0155). |
+| `FIRECRAWL_API_KEY` | no | Firecrawl is skipped and search stays on SearXNG. Setting it sends web search queries to Firecrawl (ADR 0155). |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | no | No App Insights export; OTLP only. |
 | `VAPID_PRIVATE_KEY` | no | Web Push is hidden. |
 | `MAILGUN_SIGNING_KEY` | no | `/api/email-in` answers 503. |
@@ -72,6 +74,7 @@ That is why the `preflight` job exists: it fails the run, naming the variable, b
 | `GH_OAUTH_CLIENT_ID` | no | Overrides the committed `GitHub:OAuth:ClientId`. Not `GITHUB_*`: GitHub reserves that prefix. |
 | `EMAIL_INBOUND_DOMAIN` | no | `Email:InboundDomain`. Ships empty, so inbound email is off until set. |
 | `ACCESS_OWNERS` | no | Comma-separated Entra object ids that become the owner tier. Ships empty, so nobody is an owner until set. |
+| `WEB_SEARCH_PROVIDERS` | no | `WebSearch:Providers`, the order of the hosted search providers (`tavily,firecrawl`). Ships empty, which means that order; SearXNG is always last. |
 | `IDENTITY_ALIASES` | no | JSON object, additional Entra object id to the object id that owns the data. Ships empty. An entry is an authorization grant. |
 
 **Shared infra is all or nothing.** `ACR_NAME`, `CAE_NAME` and `CAE_RESOURCE_GROUP` are either all set (reuse, nothing

@@ -143,6 +143,45 @@ public sealed class InfraPortabilityTests
         Assert.Single(Regex.Matches(module, "'" + envVar + "'"));
     }
 
+    // ADR 0155: the hosted web-search keys are OPTIONAL secrets (the googleMapsApiKey/hindsightApiKey shape): an empty
+    // default with no @minLength, a secret entry and a secretRef env var emitted only when non-empty.
+    [Theory]
+    [InlineData("tavilyApiKey", "tavily-api-key", "WebSearch__Tavily__ApiKey")]
+    [InlineData("firecrawlApiKey", "firecrawl-api-key", "WebSearch__Firecrawl__ApiKey")]
+    public void WebSearchKeys_AreOptionalSecrets_EmittedOnlyWhenSet(string param, string secret, string envVar)
+    {
+        var main = StripBicepComments(Read("infra", "main.bicep"));
+        var module = StripBicepComments(Read("infra", "modules", "container-app.bicep"));
+
+        foreach (var text in new[] { main, module })
+        {
+            Assert.Matches(new Regex(@"param " + param + @" string = ''"), text);
+            Assert.Matches(new Regex(@"@secure\(\)\s*@description\([^\r\n]*\)\s*param " + param + @"\b"), text);
+            Assert.DoesNotMatch(new Regex(@"@minLength\([^\r\n]*\)\s*(@\w+\([^\r\n]*\)\s*)*param " + param + @"\b"), text);
+        }
+
+        Assert.Contains(param + ": " + param, main, StringComparison.Ordinal);
+        Assert.Matches(
+            new Regex(@"empty\(" + param + @"\)\s*\?\s*\[\]\s*:\s*\[\s*\{\s*name: '" + secret + @"'\s*value: " + param),
+            module);
+        Assert.Matches(
+            new Regex(@"empty\(" + param + @"\)\s*\?\s*\[\]\s*:\s*\[\{ name: '" + envVar + @"', secretRef: '" + secret + @"' \}\]"),
+            module);
+    }
+
+    [Fact]
+    public void WebSearchProviders_IsAPlainOverride_EmittedOnlyWhenSet()
+    {
+        var module = StripBicepComments(Read("infra", "modules", "container-app.bicep"));
+        var workflow = StripYamlComments(Read(".github", "workflows", "deploy.yml"));
+
+        Assert.Matches(new Regex(@"param webSearchProviders string = ''"), module);
+        Assert.Matches(
+            new Regex(@"empty\(webSearchProviders\)\s*\?\s*\[\]\s*:\s*\[\{ name: 'WebSearch__Providers', value: webSearchProviders \}\]"),
+            module);
+        Assert.Contains("[ -z \"$WEB_SEARCH_PROVIDERS\" ] || optional+=(webSearchProviders=", workflow, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void AppConfigOverrides_AccessOwnersAreEmittedPerIndexOnlyWhenSet()
     {

@@ -61,6 +61,10 @@ services:
       AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:?set AZURE_CLIENT_SECRET in .env}
       AzureOpenAI__TenantId: ${AZURE_TENANT_ID}
       WebSearch__Endpoint: http://searxng:8888
+      # Optional hosted search keys (ADR 0155). Empty means absent: the provider is skipped and search stays on SearXNG.
+      WebSearch__Tavily__ApiKey: ${TAVILY_API_KEY:-}
+      WebSearch__Firecrawl__ApiKey: ${FIRECRAWL_API_KEY:-}
+      WebSearch__Providers: ${WEB_SEARCH_PROVIDERS:-}
       # OFF: a signed-in user can run the Copilot shell INSIDE this container (ADR 0107), where it can read the service
       # principal secret above and forge the principal header (ADR 0121, 0145). Turn it on only for people you fully trust.
       Copilot__BuiltInToolsEnabled: "false"

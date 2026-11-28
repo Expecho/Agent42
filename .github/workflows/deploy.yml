@@ -249,6 +249,7 @@ jobs:
           EMAIL_INBOUND_DOMAIN: ${{ vars.EMAIL_INBOUND_DOMAIN }}
           ACCESS_OWNERS: ${{ vars.ACCESS_OWNERS }}
           IDENTITY_ALIASES: ${{ vars.IDENTITY_ALIASES }}
+          WEB_SEARCH_PROVIDERS: ${{ vars.WEB_SEARCH_PROVIDERS }}
         run: |
           acr_password=$(az acr credential show --name "$REGISTRY_NAME" --query "passwords[0].value" -o tsv)
 
@@ -266,6 +267,7 @@ jobs:
           [ -z "$VAPID_SUBJECT" ] || optional+=(vapidSubject="$VAPID_SUBJECT")
           [ -z "$GH_OAUTH_CLIENT_ID" ] || optional+=(githubOAuthClientId="$GH_OAUTH_CLIENT_ID")
           [ -z "$EMAIL_INBOUND_DOMAIN" ] || optional+=(emailInboundDomain="$EMAIL_INBOUND_DOMAIN")
+          [ -z "$WEB_SEARCH_PROVIDERS" ] || optional+=(webSearchProviders="$WEB_SEARCH_PROVIDERS")
           # ACCESS_OWNERS is comma-separated; Bicep takes a JSON array.
           if [ -n "$ACCESS_OWNERS" ]; then
             optional+=(accessOwners="$(echo "$ACCESS_OWNERS" | jq -Rc 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')")
@@ -295,6 +297,8 @@ jobs:
               googleMapsApiKey="${{ secrets.GOOGLE_MAPS_API_KEY }}" \
               githubOAuthClientSecret="${{ secrets.GH_OAUTH_CLIENT_SECRET }}" \
               hindsightApiKey="${{ secrets.HINDSIGHT_API_KEY }}" \
+              tavilyApiKey="${{ secrets.TAVILY_API_KEY }}" \
+              firecrawlApiKey="${{ secrets.FIRECRAWL_API_KEY }}" \
               appInsightsConnectionString="${{ secrets.APPLICATIONINSIGHTS_CONNECTION_STRING }}" \
               vapidPrivateKey="${{ secrets.VAPID_PRIVATE_KEY }}" \
               mailgunSigningKey="${{ secrets.MAILGUN_SIGNING_KEY }}" \

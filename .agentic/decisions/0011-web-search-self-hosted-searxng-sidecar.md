@@ -3,10 +3,12 @@ id: 0011
 date: 2026-07-12
 status: accepted
 tags: [web-search, tools, agent-framework, security, ssrf, prompt-injection, container-apps]
-amended_by: [0059, 0060, 0066, 0067, 0125, 0150]
+amended_by: [0059, 0060, 0066, 0067, 0125, 0150, 0155]
 ---
 
 # Web search as function tools over a self-hosted SearXNG sidecar
+
+> **Amended by [ADR 0155](0155-web-search-provider-fallback-chain.md) (2026-11-28).** Tavily and Firecrawl are now an optional, operator-keyed chain in front of the sidecar, which stays the never-benched last resort. The "Tavily / Brave / Bing Search APIs" rejection below stands for the default (no key, no change); its cost-and-coupling reason is outweighed, for operators who opt in, by reliability from one datacenter IP.
 
 > **Amended by [ADR 0125](0125-remove-fetch-web-page-and-context-dev.md) (2026-11-14).** Its `fetch_web_page` tool, the context.dev scrape path and the allowlist-exempt link following are removed. `web_search` and the whole-URL allowlist stand; the allowlist now guards `read_web_document` only.
 

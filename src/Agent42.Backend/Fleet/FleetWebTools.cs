@@ -6,7 +6,7 @@ using Microsoft.Extensions.AI;
 namespace Agent42.Backend;
 
 /// <summary>
-/// <c>web_search</c> for one fleet task (ADR 0097), over the same <see cref="IWebSearch"/> (SearXNG) as a chat. The
+/// <c>web_search</c> for one fleet task (ADR 0097), over the same <see cref="IWebSearch"/> (the SearXNG sidecar, or the fallback chain in front of it, ADR 0155) as a chat. The
 /// result is capped like the grain's. The fleet has no page reader: with <c>fetch_web_page</c> gone (ADR 0125) there is
 /// no tool that dials a model-chosen URL here, so there is no URL allowlist to keep either.
 /// </summary>
