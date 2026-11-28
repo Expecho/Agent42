@@ -2163,6 +2163,9 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   `timeout`/`not-registered`), which is the opposite of `WebPushNotificationSender`'s swallow-everything
   contract. Do not "unify" it with that sender or route it through `IPushNotificationSender`: either the test
   goes blind or the turn-path sender starts throwing into a persisted turn.
+  **A fourth and fifth origin since ADR 0154: the fleet's terminal push and its stuck push** (`FleetTaskNotifier`, called from
+  `FleetTaskService`, not from a grain). They are generic-text pushes of the task itself, skipped when the task has an origin
+  conversation (its background turn pushes), and the stuck one fires from the flush tick.
 - **Evidence:** `src/Agent42.Agents/Push/AgentGrain.Push.cs` (`SendAwayReplyPushAsync` itself — but
   note the three facts this gotcha is about are all CALL SITES, which live in the core part:
   `src/Agent42.Agents/Conversations/AgentGrain.cs` has the gated call in `EnqueuePromptAsync`, the
@@ -5185,4 +5188,17 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
   events and repaints the conversation from history when the turn ends; it must not expect the prompt to be there. Research turns
   hide their draft until the end too (ADR 0082).
 - **Evidence:** `src/Agent42.Backend/wwwroot/js/send.js` (`attachToRunningTurn`), `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ProjectHistory`)
+- **Verified:** 2026-11-28
+
+### A fleet task's terminal push is skipped for tasks with an origin, and a user stop has TWO sites sharing one reason
+
+- **Claim:** `FleetTaskNotifier` pushes when a task ends (ADR 0154) only for a task WITHOUT `OriginConversationId`: a chat-started
+  task's result becomes a background turn whose away push already reaches the user, so a second push would stack two entries.
+  Done also yields when the model pushed during the task (`FleetPushCounter`); Failed and a cap stop never do. A user stop is
+  silent, and it has two sites, `StopAsync` and declining "Run this team?" in `FleetTeamRunner.Planning.cs`; both cancel with
+  `FleetBudget.UserStopReason`, which the notifier compares `record.Reason` against (first reason wins in `FleetBudget.Cancel`).
+  A third site that cancels with its own string would push as if a cap was hit. The stuck push is the exception to "origin means no
+  push": nobody watches a chat-started task, and its result push only comes at the end.
+- **Evidence:** `src/Agent42.Backend/Fleet/FleetTaskNotifier.cs`, `src/Agent42.Backend/Fleet/FleetBudget.cs` (`UserStopReason`),
+  `tests/Agent42.Tests/FleetTaskNotifierTests.cs`, `tests/Agent42.Tests/FleetTaskServiceTests.cs` (`Stopped_ByPlanDecline_DoesNotPush`)
 - **Verified:** 2026-11-28

@@ -32,6 +32,10 @@ Agents write named, versioned pages (html, svg, markdown or code) to a shared ca
 
 A Details | Graph switch above the task shows teams as boxes and agents as nodes (pending, working, done, failed). Click a node for its output. The choice is remembered in your browser.
 
+## Notifications
+
+A task you started from `/fleet/` pushes to your devices when it finishes, fails or stops at its token cap, with generic text only (a tap opens the task). Stopping it yourself, declining the plan and a restart do not push. A task that was started from a chat reports back to that chat instead. Any running task that publishes nothing for 10 minutes with no question open pushes "may be stuck" once per quiet spell, at most twice (`Fleet:StuckAfter`, `0` turns it off; a long Copilot or tool run can trigger it falsely). If the task already sent its own push, the "finished" one is skipped (ADR 0154).
+
 ## Recover an unfinished task
 
 An interrupted, stopped or failed task offers **Recover** next to **Run again**. Run again starts the request over in a new workspace. Recover starts a new task that shares the old task's workspace and canvas, rebuilds the team you already approved (no planner call and no approval prompt, unless a model or tool it used is gone, in which case a new team is planned), and hands the agents a short digest of what was done: results, reviewer feedback, the todo list and each agent's last output. The digest is data, never instructions. The old task stays as history, and the new one sits under it in the task list (`recovered from #n`).

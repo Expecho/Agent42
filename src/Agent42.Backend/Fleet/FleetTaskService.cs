@@ -48,6 +48,7 @@ public sealed partial class FleetTaskService(
     private readonly ConcurrentDictionary<string, RunningFleetTask> _running = new(StringComparer.Ordinal);
     private readonly Lock _submitGate = new();
     private readonly TimeProvider _time = time ?? TimeProvider.System;
+    private readonly FleetTaskNotifier? _taskNotifier = push is null ? null : new FleetTaskNotifier(push, logger);
     private volatile bool _stopping;
 
     public FleetOptions Options => options;
@@ -247,7 +248,7 @@ public sealed partial class FleetTaskService(
     {
         if (RunningOf(userId, taskId) is { } task)
         {
-            task.Budget.Cancel("stopped by the user");
+            task.Budget.Cancel(FleetBudget.UserStopReason);
             return FleetOutcome.Ok;
         }
 
@@ -415,6 +416,11 @@ public sealed partial class FleetTaskService(
         /// <summary>Started from a chat (ADR 0115): every question is answered automatically.</summary>
         public bool AutoApprove => Record.OriginConversationId is not null;
         public Task Completion { get; set; } = Task.CompletedTask;
+
+        /// <summary>The model's own pushes in this task (ADR 0154); the generic "finished" push yields to them.</summary>
+        public FleetPushCounter Pushes { get; } = new();
+
+        public FleetStuckWatch Stuck { get; } = new();
 
         /// <summary>The best-effort recording of the lessons the planners got (ADR 0124), awaited briefly when the task finishes.</summary>
         public Task Applications { get; set; } = Task.CompletedTask;

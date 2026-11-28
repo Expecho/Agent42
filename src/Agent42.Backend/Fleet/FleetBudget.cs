@@ -95,6 +95,9 @@ public sealed class FleetBudget : IDisposable
         return true;
     }
 
+    /// <summary>The cancel reason of a stop the user asked for: the stop button and declining the plan (ADR 0154).</summary>
+    public const string UserStopReason = "stopped by the user";
+
     /// <summary>Cancels the task with a reason; the first reason wins.</summary>
     public void Cancel(string reason)
     {

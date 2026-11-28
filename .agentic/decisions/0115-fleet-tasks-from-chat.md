@@ -6,7 +6,7 @@ tags: [fleet, agents, tools, selection, background-turn, push, chat-apps, github
 supersedes: []
 extends: [0022, 0028, 0106, 0111]
 amends: [0097, 0021]
-amended_by: [0147]
+amended_by: [0147, 0154]
 ---
 
 # A chat can start a fleet task, and the result comes back as a background turn
@@ -81,7 +81,7 @@ elsewhere.
   the excluded `ask_agent`, the incognito refusal, the `Fleet:CopilotAgentsEnabled` kill switch, and pointing those
   doors at an agent whose `EnabledTools` excludes `fleet`. Same register as ADR 0097 decision 7.
 - **Copilot MCP writes are auto-approved** in chat-started tasks (decision 2).
-- **A task interrupted by a restart never notifies.** ADR 0097 decision 3 rejects a startup scan.
+- **A task interrupted by a restart never notifies.** ADR 0097 decision 3 rejects a startup scan. ("Notifies" means the conversation; ADR 0154 adds a generic fleet push for tasks without an origin, plus a stuck push for any task.)
 - **The open web UI sees the result turn only on reload**, as with `/api/agent-run`.
 - **Egress: no new path.** Fleet content already goes to the user's providers (ADR 0097 decision 8). The result turn's
   reply reaches the chat app through the existing away-reply route (ADR 0111), opt-in per connection.

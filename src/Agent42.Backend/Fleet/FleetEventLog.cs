@@ -53,17 +53,30 @@ public sealed class FleetEventLog(IFleetStore store, string userId, string taskI
     private readonly List<Channel<FleetEvent>> _subscribers = [];
     private readonly SemaphoreSlim _flushing = new(1, 1);
     private long _seq;
+    private DateTimeOffset _lastEventAt = (time ?? TimeProvider.System).GetUtcNow();
     private long _persistedBytes;
     private bool _completed;
 
     public long LastSeq => Interlocked.Read(ref _seq);
+
+    /// <summary>When the last event was published; the construction time before the first, so a silent task still ages (ADR 0154).</summary>
+    public DateTimeOffset LastEventAt
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _lastEventAt;
+            }
+        }
+    }
 
     public void Publish(string type, object data)
     {
         var node = JsonSerializer.SerializeToNode(data, FleetTeamPlan.JsonOptions);
         lock (_gate)
         {
-            var evt = new FleetEvent(++_seq, type, _time.GetUtcNow(), node);
+            var evt = new FleetEvent(++_seq, type, _lastEventAt = _time.GetUtcNow(), node);
             _pending.Add(evt);
             foreach (var subscriber in _subscribers)
             {
