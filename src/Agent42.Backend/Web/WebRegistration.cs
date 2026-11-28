@@ -3,8 +3,8 @@ using Agent42.Agents;
 namespace Agent42.Backend;
 
 /// <summary>
-/// Registers the web tools (ADR 0011, 0059, 0066): <c>web_search</c> over the SearXNG sidecar, the SearXNG web UI
-/// proxy, and the guarded <c>read_web_document</c> fetcher.
+/// Registers the web tools (ADR 0011, 0059, 0066, 0155): <c>web_search</c> over the SearXNG sidecar (behind an optional
+/// keyed-provider fallback chain), the SearXNG web UI proxy, and the guarded <c>read_web_document</c> fetcher.
 ///
 /// <para>Lifted out of <c>Program.cs</c> (cc-06), the <see cref="HindsightRegistration"/> shape. The wiring below is
 /// pinned by <c>WebRegistrationTests</c>, which resolves the real handler chain rather than reading this file.</para>
@@ -27,9 +27,9 @@ public static class WebRegistration
 
         AddHttpClients(services, new Uri(webSearchEndpoint));
 
-        services.AddSingleton<IWebSearch>(sp => new SearxngWebSearch(
-            sp.GetRequiredService<IHttpClientFactory>().CreateClient(SearxngWebSearch.HttpClientName),
-            sp.GetRequiredService<ILogger<SearxngWebSearch>>()));
+        // web_search (ADR 0011, 0155): the bare SearXNG sidecar, or a fallback chain in front of it when an operator
+        // key for Tavily or Firecrawl is set.
+        services.AddWebSearchChain(configuration);
 
         // read_web_document (ADR 0066): the guarded fetcher over the client registered above. A mandatory AgentGrain
         // dependency (AddAgent42Silo checks it); its ingestion port is host-invariant and comes from AddAgent42Silo.

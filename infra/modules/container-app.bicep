@@ -89,6 +89,17 @@ param githubOAuthClientSecret string = ''
 param hindsightApiKey string = ''
 
 @secure()
+@description('Tavily API key (ADR 0155). OPTIONAL: when empty neither the secret nor the env var is emitted and the provider is skipped.')
+param tavilyApiKey string = ''
+
+@secure()
+@description('Firecrawl API key (ADR 0155). OPTIONAL: when empty neither the secret nor the env var is emitted and the provider is skipped.')
+param firecrawlApiKey string = ''
+
+@description('Web search provider order (ADR 0155). OPTIONAL: when empty WebSearch__Providers is not emitted.')
+param webSearchProviders string = ''
+
+@secure()
 @description('Application Insights connection string. OPTIONAL, exactly like googleMapsApiKey: when empty, neither the secret nor the env var below is emitted, and the app exports to the OTLP collector only.')
 param appInsightsConnectionString string = ''
 
@@ -233,6 +244,22 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
                 value: hindsightApiKey
               }
             ],
+        empty(tavilyApiKey)
+          ? []
+          : [
+              {
+                name: 'tavily-api-key'
+                value: tavilyApiKey
+              }
+            ],
+        empty(firecrawlApiKey)
+          ? []
+          : [
+              {
+                name: 'firecrawl-api-key'
+                value: firecrawlApiKey
+              }
+            ],
         empty(appInsightsConnectionString)
           ? []
           : [
@@ -339,6 +366,18 @@ resource containerApp 'Microsoft.App/containerApps@2026-01-01' = {
           empty(hindsightApiKey)
             ? []
             : [{ name: 'Hindsight__ApiKey', secretRef: 'hindsight-api-key' }],
+          // Hosted web search keys (ADR 0155). Emitted only when supplied: with no key the provider is skipped and
+          // search runs on the SearXNG sidecar, the optional-secret shape of the keys above. Supplying one sends
+          // web search queries to that vendor.
+          empty(tavilyApiKey)
+            ? []
+            : [{ name: 'WebSearch__Tavily__ApiKey', secretRef: 'tavily-api-key' }],
+          empty(firecrawlApiKey)
+            ? []
+            : [{ name: 'WebSearch__Firecrawl__ApiKey', secretRef: 'firecrawl-api-key' }],
+          empty(webSearchProviders)
+            ? []
+            : [{ name: 'WebSearch__Providers', value: webSearchProviders }],
           // Application Insights: traces (chat content stripped) and metrics, alongside OTLP. Emitted only
           // when supplied: with no connection string the app exports to OTLP only and starts normally.
           empty(appInsightsConnectionString)

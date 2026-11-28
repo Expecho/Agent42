@@ -17,11 +17,15 @@ public sealed class WebRegistrationTests
 
     // `AddServiceDefaults` applies the standard resilience handler to EVERY named client; this reproduces that so
     // "removed" is observable, and registers a control client that keeps it so the check is not vacuous.
-    private static ServiceProvider Build(string? endpoint = "http://localhost:8888")
+    private static ServiceProvider Build(string? endpoint = "http://localhost:8888", params (string Key, string? Value)[] extra)
     {
-        var config = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["WebSearch:Endpoint"] = endpoint })
-            .Build();
+        var settings = new Dictionary<string, string?> { ["WebSearch:Endpoint"] = endpoint };
+        foreach (var (key, value) in extra)
+        {
+            settings[key] = value;
+        }
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         var services = new ServiceCollection();
         services.AddLogging();
         services.ConfigureHttpClientDefaults(b => b.AddStandardResilienceHandler());
@@ -130,4 +134,81 @@ public sealed class WebRegistrationTests
     [InlineData("  ")]
     public void AMissingEndpoint_FailsAtStartup(string? endpoint)
         => Assert.Throws<InvalidOperationException>(() => Build(endpoint));
+
+    // ADR 0155: the chain. No key means no client and the bare SearXNG search (today's behaviour); a key means a
+    // key-gated named client without the inherited resilience pipeline, and the fallback chain.
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    public void ABlankKey_CountsAsNoKey(string? key)
+    {
+        using var sp = Build("http://localhost:8888", ("WebSearch:Tavily:ApiKey", key));
+
+        Assert.IsType<SearxngWebSearch>(sp.GetRequiredService<IWebSearch>());
+    }
+
+    [Fact]
+    public void AKey_RegistersTheChain_AndTheFleetResolvesTheSameOne()
+    {
+        using var sp = Build("http://localhost:8888", ("WebSearch:Firecrawl:ApiKey", "fc-key"));
+
+        Assert.IsType<FallbackWebSearch>(sp.GetRequiredService<IWebSearch>());
+        Assert.Same(sp.GetRequiredService<IWebSearch>(), sp.GetRequiredService<IWebSearch>());
+    }
+
+    [Theory]
+    [InlineData(TavilyWebSearch.HttpClientName, "WebSearch:Tavily:ApiKey")]
+    [InlineData(FirecrawlWebSearch.HttpClientName, "WebSearch:Firecrawl:ApiKey")]
+    public void AKeyedClient_ExistsOnlyWithItsKey_AndHasNoResiliencePipeline(string client, string keySetting)
+    {
+        using var without = Build();
+        using var with = Build("http://localhost:8888", (keySetting, "k"));
+
+        // No key: the name is unregistered, so the factory hands back a plain client that DID inherit the pipeline
+        // from ConfigureHttpClientDefaults. The registration never asks for it (see the chain test above).
+        Assert.True(HasResilience(without, client));
+        Assert.False(HasResilience(with, client));
+        using var http = with.GetRequiredService<IHttpClientFactory>().CreateClient(client);
+        Assert.Equal(TimeSpan.FromSeconds(6), http.Timeout);
+    }
+
+    [Fact]
+    public void ProvidersSetting_DecidesTheOrder_AndSearxngIsAlwaysLast()
+    {
+        var order = WebSearchChainRegistration.ParseOrder("firecrawl, tavily", out var unknown);
+
+        Assert.Equal(["firecrawl", "tavily", "searxng"], order);
+        Assert.Empty(unknown);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void ABlankProvidersSetting_MeansTheDefaultOrder(string? raw) =>
+        Assert.Equal(["tavily", "firecrawl", "searxng"], WebSearchChainRegistration.ParseOrder(raw, out _));
+
+    [Fact]
+    public void AnUnknownProvider_IsIgnored_AndAllUnknownLeavesSearxngOnly()
+    {
+        var mixed = WebSearchChainRegistration.ParseOrder("bing,tavily", out var unknownMixed);
+        var allBad = WebSearchChainRegistration.ParseOrder("bing,brave", out var unknownAll);
+        var mid = WebSearchChainRegistration.ParseOrder("searxng,tavily", out _);
+
+        Assert.Equal(["tavily", "searxng"], mixed);
+        Assert.Equal(["bing"], unknownMixed);
+        Assert.Equal(["searxng"], allBad);
+        Assert.Equal(2, unknownAll.Count);
+        Assert.Equal(["tavily", "searxng"], mid);
+    }
+
+    [Fact]
+    public void AKeyForAProviderOutsideTheList_DoesNotBuildTheChain()
+    {
+        using var sp = Build("http://localhost:8888",
+            ("WebSearch:Providers", "firecrawl"), ("WebSearch:Tavily:ApiKey", "k"));
+
+        Assert.IsType<SearxngWebSearch>(sp.GetRequiredService<IWebSearch>());
+    }
 }

@@ -116,6 +116,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Repo variables `AZURE_RESOURCE_GROUP` + `AUTH_CLIENT_ID` (and, for prod, the rest of the table in `docs/features/azure-deployment.md`) | The deploy fails `preflight`, by design: an absent variable expands to an empty string, and empty means "off" (ADR 0128) |
 | `SEARXNG_SECRET` | **App down.** The sidecar crash-loops, and ACA gates revision health on every container (ADR 0011) |
 | `GOOGLE_MAPS_API_KEY` | Location returns coordinates without an address (ADR 0012) |
+| `TAVILY_API_KEY` / `FIRECRAWL_API_KEY` | Search stays on the SearXNG sidecar alone, and no hosted call is made. Setting one sends search queries to that vendor (ADR 0155) |
 | `HINDSIGHT_API_KEY` | No long-term memory, zero calls are made, and the picker shows no memory row (ADR 0131). This is the operator's egress switch (ADR 0056/0057) |
 | `VAPID_PRIVATE_KEY` | Web Push is hidden (ADR 0028) |
 | `MAILGUN_SIGNING_KEY` + MX for the in.agent42.nl subdomain → Mailgun + a Route forwarding to `/api/email-in` | `/api/email-in` answers 503 and no inbound email is accepted. The app boots (ADR 0096) |
@@ -187,7 +188,7 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
 | Model providers: multi-provider, Foundry key, per-user overlay, no baseline, Responses API, hosted tools, Anthropic (Claude) kind + compatibility shim, prompt-prefix caching (stable prefix, Azure cache key, cached tokens), GitHub Copilot kind (Sign in with GitHub, copilot-agents-only models), Auto model (a per-user Decision-1 router kind, sticky per-turn routing, reserved `auto` value; picture requests route to an image model as a one-off turn; Auto can be the default model) | 0013, 0014, 0015, 0017, 0018, 0019, 0033, 0103, 0104, 0108, 0137, 0138, 0139 |
 | Image generation, speech (STT/TTS/voice loop), server-side transcription model (chat voice notes), reasoning output (+ summary fallback, visible empty replies) | 0006, 0020, 0037, 0038, 0071, 0113, 0136 |
 | Document RAG, per-user embeddings, web documents into RAG, sequential `read_document` (re-ingest replaces), fleet workspace documents | 0007, 0008, 0030, 0066, 0098, 0101 |
-| Web search (SearXNG sidecar, engines, proxied UI); no page fetch (removed, 0125) | 0011, 0059, 0060, 0125 |
+| Web search (SearXNG sidecar, engines, proxied UI; optional Tavily/Firecrawl fallback chain, operator keys, SearXNG never benched); no page fetch (removed, 0125) | 0011, 0059, 0060, 0125, 0155 |
 | Location (a client tool since 0093) | 0012, 0093 |
 | Selectable tools: three layers, skills, uploaded skills (one install path, `UserSkillInstaller`; the dream may propose edits, 0146; the two shipped skills follow their tool key, no picker row), memory | 0021, 0048, 0049, 0057, 0126, 0146 |
 | Long-term memory (Hindsight; **no delete path**; picker row hidden without a key) | 0056, 0057, 0131 |

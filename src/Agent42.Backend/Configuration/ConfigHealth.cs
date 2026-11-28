@@ -44,6 +44,7 @@ public static partial class ConfigHealth
     private const string ProbeSearxng = "probe:searxng";
     private const string ProbeGeocoding = "probe:geocoding";
     private const string ProbeHindsight = "probe:hindsight";
+    private const string ProbeWebSearchChain = "probe:websearch-chain";
 
     /// <summary>
     /// The static report — a pure function of config + environment + push state. No network. Fatal values
@@ -69,6 +70,18 @@ public static partial class ConfigHealth
             "The backend never reads the sidecar's secret, so it cannot be presence-checked from app "
             + "config. A live probe of the SearXNG endpoint is the only signal.", Billable: false));
         checks.Add(NotProbed(GroupWebSearch, ProbeSearxng, "SearXNG reachability", billable: false));
+
+        // Hosted web-search providers (ADR 0155). Absent is a supported state: search then runs on the sidecar alone.
+        checks.Add(PresenceCheck(GroupWebSearch, "WebSearch:Tavily:ApiKey", config["WebSearch:Tavily:ApiKey"],
+            present: "configured — Tavily is tried first (queries go to Tavily)",
+            missing: "not set — Tavily is not used",
+            missingStatus: Warning));
+        checks.Add(PresenceCheck(GroupWebSearch, "WebSearch:Firecrawl:ApiKey", config["WebSearch:Firecrawl:ApiKey"],
+            present: "configured — Firecrawl is in the chain (queries go to Firecrawl)",
+            missing: "not set — Firecrawl is not used",
+            missingStatus: Warning));
+        // Free: reads the in-memory cooldown snapshot and calls no vendor, because a live probe would burn credits.
+        checks.Add(NotProbed(GroupWebSearch, ProbeWebSearchChain, "Web search chain state", billable: false));
 
         // ————— Production infrastructure (informational / n-a in Development, and n-a for local storage) —————
         AddInfrastructureChecks(checks, config, isDevelopment);

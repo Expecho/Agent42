@@ -65,6 +65,10 @@ services:
       # GSS encryption is switched off: the slim image has no Kerberos library, and Npgsql would log a load error probing it.
       ConnectionStrings__postgres: Host=postgres;Database=agent42;Username=agent42;Password=${POSTGRES_PASSWORD};GSS Encryption Mode=Disable
       WebSearch__Endpoint: http://searxng:8888
+      # Optional hosted search keys (ADR 0155). Empty means absent: the provider is skipped and search stays on SearXNG.
+      WebSearch__Tavily__ApiKey: ${TAVILY_API_KEY:-}
+      WebSearch__Firecrawl__ApiKey: ${FIRECRAWL_API_KEY:-}
+      WebSearch__Providers: ${WEB_SEARCH_PROVIDERS:-}
       # OFF: with built-in tools on, every Copilot chat gets an auto-approved shell INSIDE this container (ADR 0107), and
       # with no authentication anyone who can reach the port could use it to read the Postgres password above and the
       # key ring in /data. Turn it on only behind an authenticating proxy.

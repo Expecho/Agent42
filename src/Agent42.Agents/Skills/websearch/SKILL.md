@@ -11,8 +11,8 @@ metadata:
 You can search the web with `web_search` and read a web-hosted **document** — a PDF, Word,
 PowerPoint, Excel or text file — with `read_web_document`. There is **no tool that reads an ordinary
 web page in full**. Searches run through our own self-hosted search instance, which forwards the query
-on to upstream engines (Google, DuckDuckGo, Bing) without an account or an API key. They cost nothing,
-so there is no reason to ration them — but a search query *is* sent to a third party, so treat it as
+on to upstream engines (Google, DuckDuckGo, Bing), or through a hosted search service when the operator
+configured one. Do not ration them, but a search query *is* sent to a third party, so treat it as
 public: search for the *topic*, never for the user's private details, and never paste conversation
 contents, uploaded document text, or anything the user told you in confidence into a query.
 
