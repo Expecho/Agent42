@@ -381,9 +381,9 @@ No finding was rejected. The critic did not open the individual ADR files or `pl
 verify DevHost's canned-turn capability or the `sw.js` version; the executor re-checks DevHost in step 11 (done) and the
 ADR set when writing 0153. A second critic pass on the *revised* plan was not run.
 
-## Execution notes (live; becomes "Divergences from the plan" at close-out)
+## Divergences from the plan (as executed)
 
-Branch `feature/resumable-chat-stream`, from `main @ f43a9a3` (no drift). Steps 1-5 done with their tests; 6+ pending.
+Branch `feature/resumable-chat-stream`, from `main @ f43a9a3` (no drift). All steps 0-12 done; step 13 is the post-deploy list in ADR 0153.
 
 Divergences so far:
 - **Types live in two projects.** Port, in-memory twin, `ChatTurnStore`, `ChatTurnOptions`, `ChatTurnMeta`, `IReplicaIdentity` are in `src/Agent42.Agents/ChatTurns/`; pump/writer/feed/registry/readers/tail/sweeper/registration in `src/Agent42.Backend/Conversations/`.
@@ -394,4 +394,15 @@ Divergences so far:
 - `LocalFileStore` gained `AppendAtAsync` (conditional append under the file gate) and `LocalFileItem.Modified`.
 - Added `ChatTurnOptions.FlushBytes` (64 KB): a batch that large flushes at once.
 - AC5/AC6 live in `ChatTurnMultiReplicaTests` (two replicas = two stores/registries/tails over one blob store).
-- **Spike S2 (append-blob range on an empty blob / past the end) NOT measured here** (no Azurite). `AzureChatTurnBlobs.GetRangeAsync` handles 416 as "no growth" defensively; moved to the post-deploy checks. Spike S1 pending (decides step 10 rendering).
+- **Spike S2 (append-blob range on an empty blob / past the end) NOT measured here** (no Azurite). `AzureChatTurnBlobs.GetRangeAsync` handles 416 as "no growth" defensively; moved to the post-deploy checks. 
+- **Spike S1 result:** `GetHistoryAsync` mid-turn returns ZERO turns (not even the user message), so a passive attach renders only the assistant bubble and repaints from history when the turn ends (`attachToRunningTurn` in `send.js`). The prompt is deliberately not stored in the turn meta.
+- **Creation split from append (found by the delete tests):** `IChatTurnBlobs.CreateAsync` is the only way a log comes into being; `AppendAsync` never creates, at any offset. The plan's "append at offset 0 creates" let a purge before the first flush be undone.
+- **The registry is keyed by the incognito flag too** (found by `Turn_Incognito_NotVisibleWithoutFlag`): the plan's key was (user, conversation, turn), which exposed an incognito turn to a request without the flag.
+- **AC20 as written is not literally true through the DELETE endpoint:** the endpoint also purges the grain, which fails the running turn, so the originating stream ends (reset) rather than completing. D11's "originating stream unaffected" holds for the STORE purge and is tested that way (`DeleteWhileRunning_DoesNotRecreateBlobs` purges through the runner); the real endpoint is `DeleteEndpointWhileRunning_LeavesNoBlobs_AndTheStreamEnds`.
+- **A reattach GET ends cleanly (no abort) when the turn is not clean;** only the originating POST aborts the connection (to keep the old failure signal). The page treats "ended without `done`" as "go recover from history".
+- **Resolved optionally (ADR 0105):** endpoints resolve `ChatTurnRunner` through `IServiceProvider`, so a host without the registration keeps the old direct stream and answers 503 on the new routes; test hosts that chat register it through `AddChatTurnsInMemory`.
+- **`ChatTurnRunner` is also a hosted service** only to await the pumps' last writes at shutdown; cancellation itself happens at `ApplicationStopping`.
+- **A store that cannot create the turn does not stop it** (`persisting = false`): it streams live but cannot be rejoined.
+- **Frontend:** `send()` keeps a local `finishLiveReply` shared by a clean stream and a rejoined one. Source-text guards that read `send.js` for the dispatcher now read `chatstream.js` (six asset tests updated). `selectConversation` lets a PASSIVE attach be aborted by navigating away; a turn this page sent still pins the page as before.
+- **e2e:** 4 new cases (reload mid-reply, second page + stop, passive page never runs a confirm, finished turn = one bubble pair). The plan's case (4), a reattach after a FORCED socket failure not re-running an answered confirm, is NOT covered end to end (Playwright cannot kill a response mid-stream cheaply); the replay-through gate is pinned by the unit-level seq tests and the source-text guard only. DevHost gained a `take your time` marker (400 ms per chunk).
+- **Quality gates (this session):** new-code coverage 85.3% (833/977, threshold 80, `check-new-code-coverage.mjs`); `dotnet format --verify-no-changes` clean; S3776/S138/S107 are build errors and the build is clean; full suite 4497 passed, 3 failed: the `LiveCopilotTests` that a gitignored `live-model.local.json` enables (they call a real Copilot service; they skip on a clean checkout; no Copilot code was touched). `vulnerable_packages`: no package added, not run. Not run here: `e2e-selfhost`, the Android job (the Android contract file is unchanged), the Azure append-blob adapter (post-deploy).

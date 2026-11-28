@@ -48,6 +48,8 @@ session files, the Data Protection key ring) and `agent42-copilot` (chat workspa
 
 ## Limits and things to know
 
+- **Rejoining a running reply** keeps a short-lived replay log on the data volume (`chat-turns/`, deleted with the conversation and
+  after 24 hours). `ChatTurns__Enabled=false` turns it off, and replies then stream only to the page that sent them.
 - **No authentication.** Every request is the single user `local-dev`. The compose file binds the app to loopback and the
   app logs a warning at startup. To reach it from elsewhere, put a reverse proxy that authenticates in front. Do not publish
   port 8080 as it is. Alternatively set `Auth__Mode=entra` (with `Auth__Entra__*`) to make the app itself sign users in with

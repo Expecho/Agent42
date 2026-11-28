@@ -5162,3 +5162,27 @@ for a windowed per-chat chat (`PersistTruncationAsync` is a persist site).
 - **Evidence:** `src/Agent42.Backend/Fleet/FleetTaskService.cs` (`ResolvePreviousAsync`), `src/Agent42.Backend/Fleet/FleetTeamRunner.Planning.cs`,
   `src/Agent42.Backend/Fleet/FleetRun.cs`, `tests/Agent42.Tests/FleetTaskServiceTests.Recover.cs`
 - **Verified:** 2026-11-27
+
+### Resumable chat turns: the store is the truth, the feed is an optimisation, and four rules keep it that way
+
+- **Claim:** (1) `TurnFeed`/`ChatTurnRegistry` are process state; nothing may depend on them for correctness, because another
+  replica only has the store (`StoreReader`). (2) The store keeps RAW events and coalesces only on the way out (`ReplayCoalescer`):
+  a client resumes "after the last seq it saw", so coalescing on write replays text it already shows. (3) The pump's lifetime is the
+  host's `ApplicationStopping`, never `HttpContext.RequestAborted` (honouring it breaks ADR 0046), and it must never touch
+  `HttpContext`; the request's identity is captured before detaching and re-published inside it. (4) Replayed client-tool events must
+  not run: the page runs tool events only above `X-Turn-Replay-Through`, and a passive attach runs none. The delete fence is also
+  load-bearing: `IChatTurnBlobs.AppendAsync` NEVER creates (a first flush at offset 0 after a purge would resurrect the log), only
+  `CreateAsync` does, and a meta update is refused when the log is gone. A reader never writes `interrupted` back.
+- **Evidence:** `src/Agent42.Backend/Conversations/ChatTurnPump.cs`, `src/Agent42.Backend/Conversations/ChatTurnWriter.cs`, `src/Agent42.Backend/Conversations/StoreReader.cs`, `src/Agent42.Backend/Conversations/ReplayCoalescer.cs`,
+  `src/Agent42.Agents/ChatTurns/ChatTurnStore.cs`, `src/Agent42.Backend/wwwroot/js/chatstream.js`,
+  `tests/Agent42.Tests/ChatTurnApiTests.cs` (`DeleteWhileRunning_DoesNotRecreateBlobs`)
+- **Verified:** 2026-11-28
+
+### The grain's history holds nothing of a turn in flight, not even the user message
+
+- **Claim:** `GetHistoryAsync` mid-turn returns zero turns (spike S1, 2026-11-28): the session is written after the last model event.
+  Anything that rejoins a running turn (`attachToRunningTurn` in `send.js`) renders only the assistant bubble from the replayed
+  events and repaints the conversation from history when the turn ends; it must not expect the prompt to be there. Research turns
+  hide their draft until the end too (ADR 0082).
+- **Evidence:** `src/Agent42.Backend/wwwroot/js/send.js` (`attachToRunningTurn`), `src/Agent42.Agents/Conversations/AgentGrain.cs` (`ProjectHistory`)
+- **Verified:** 2026-11-28

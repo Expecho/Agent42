@@ -65,7 +65,7 @@ diagrams and code) see [`docs/features/`](docs/features/README.md). Features tha
   send it.
 - **Conversation history** — every chat is saved and listed in the sidebar, so you can leave
   and resume any conversation later, or delete one. A reply whose connection dropped (for
-  example a backgrounded phone) is recovered from the saved conversation.
+  example a backgrounded phone) is rejoined while it runs, and falls back to the saved conversation.
 - **Pins, groups and search** — pin chats to the top, file them into your own named groups
   (drag and drop on desktop), and search inside the messages themselves, not just the titles.
 - **Incognito chats** — a chat that is never saved and never appears in the sidebar.
