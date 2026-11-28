@@ -1,3 +1,5 @@
+using Agent42.Agents;
+
 namespace Agent42.Backend;
 
 /// <summary>
@@ -103,6 +105,58 @@ public sealed class LocalFileStore
         }
     }
 
+    /// <summary>Creates an empty file when none exists (ADR 0153); an existing file is left alone.</summary>
+    public async Task CreateEmptyAsync(string key, CancellationToken cancellationToken = default)
+    {
+        var path = Resolve(key);
+        var gate = GateFor(path);
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            await using var stream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.Write, FileShare.Read, 4096, useAsync: true);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Appends only when the file exists and is exactly <paramref name="expectedOffset"/> bytes long (ADR 0153). A missing file is
+    /// never created here, at any offset: that is the delete fence. The length check and the write are one step under the
+    /// file's gate, so two writers cannot both pass it.
+    /// </summary>
+    public async Task<ChatTurnAppendResult> AppendAtAsync(string key, ReadOnlyMemory<byte> content, long expectedOffset, CancellationToken cancellationToken = default)
+    {
+        var path = Resolve(key);
+        var gate = GateFor(path);
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists)
+            {
+                return new ChatTurnAppendResult(ChatTurnAppendOutcome.Missing, null);
+            }
+
+            var length = info.Length;
+            if (length != expectedOffset)
+            {
+                return new ChatTurnAppendResult(ChatTurnAppendOutcome.OffsetMismatch, length);
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            await using var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read, 4096, useAsync: true);
+            await stream.WriteAsync(content, cancellationToken);
+            return new ChatTurnAppendResult(ChatTurnAppendOutcome.Appended, length + content.Length);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     /// <summary>The file's size and last write, or null when it does not exist.</summary>
     public LocalFileInfo? GetInfo(string key)
     {
@@ -174,7 +228,7 @@ public sealed class LocalFileStore
             var key = Path.GetRelativePath(_root, file.FullName).Replace(Path.DirectorySeparatorChar, '/');
             if (key.StartsWith(prefix, StringComparison.Ordinal))
             {
-                items.Add(new LocalFileItem(key, file.Length));
+                items.Add(new LocalFileItem(key, file.Length, new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero)));
             }
         }
 
@@ -255,5 +309,5 @@ public sealed class LocalFileStore
 /// <summary>A local file's size and last write.</summary>
 public sealed record LocalFileInfo(long Size, DateTimeOffset Modified);
 
-/// <summary>A key and its size in bytes.</summary>
-public sealed record LocalFileItem(string Key, long Size);
+/// <summary>A key, its size in bytes and its last write (ADR 0153: the chat-turn sweeper needs the age).</summary>
+public sealed record LocalFileItem(string Key, long Size, DateTimeOffset Modified = default);

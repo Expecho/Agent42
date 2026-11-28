@@ -10,7 +10,7 @@ import { closeDrawer } from "./drawer.js";
 import { syncMessageActions } from "./editfork.js";
 import { defaultModel, setModel } from "./models.js";
 import { profile } from "./profile.js";
-import { streaming, voice } from "./send.js";
+import { attachToRunningTurn, detachPassive, isPassiveAttach, streaming, voice } from "./send.js";
 import { loadSharedState } from "./sharedstate.js";
 import { setTopbarShare } from "./sharelinks.js";
 import { conversations, renderSidebar } from "./sidebar.js";
@@ -29,7 +29,13 @@ export let activeAgentId = null;
 export let activeAgentKind = null;
 export async function selectConversation(id) {
   closeDrawer();
-  if (streaming || id === activeId) return;
+  if (id === activeId) return;
+  if (streaming) {
+    // A turn this page only WATCHES (ADR 0153) must not pin the user to the conversation; one it sent still does.
+    if (!isPassiveAttach()) return;
+    detachPassive();
+    await new Promise((resolve) => setTimeout(resolve, 0)); // let the attach's finally release `streaming`
+  }
   voice.stop(); // exit hands-free mode when switching chats (ADR 0037)
   activeId = id;
   // An opened conversation is a persisted one (an ephemeral chat never gets a sidebar row), so
@@ -44,11 +50,13 @@ export async function selectConversation(id) {
   setThreadLoading(true);
 
   try {
-    const [msgRes, modelRes, agentRes, toolsRes] = await Promise.all([
+    const [msgRes, modelRes, agentRes, toolsRes, turnRes] = await Promise.all([
       fetch(`/api/conversations/${encodeURIComponent(id)}/messages`),
       fetch(`/api/conversations/${encodeURIComponent(id)}/model`),
       fetch(`/api/conversations/${encodeURIComponent(id)}/agent`),
       fetch(`/api/conversations/${encodeURIComponent(id)}/tools`),
+      // Is a turn running here (started on another device, or before an F5)? 204 when none, and a failure is just "no" (ADR 0153).
+      fetch(`/api/chat/${encodeURIComponent(id)}/turn`).catch(() => null),
     ]);
     if (!msgRes.ok) return;
     const turns = await msgRes.json();
@@ -82,6 +90,12 @@ export async function selectConversation(id) {
     }
     // Again, now the agent kind is known: a copilot chat offers no history actions (ADR 0092).
     syncMessageActions();
+    // A turn still running: watch it (passively, ADR 0153 D13). Not awaited, so the spinner and the rest of the open are not held
+    // for the length of a reply. completed/failed/interrupted need nothing: the history above already owns them.
+    const turn = turnRes?.status === 200 ? await turnRes.json().catch(() => null) : null;
+    if (turn?.status === "running" && id === activeId) {
+      void attachToRunningTurn(id, turn.turnId, (finished) => repaintOpenConversation(id));
+    }
   } catch {
     // Offline: render this chat's history from the cache if it was opened while online before.
     // The model/agent/tools siblings simply degrade — the composer can't send offline anyway.
@@ -90,6 +104,21 @@ export async function selectConversation(id) {
   } finally {
     // A newer selectConversation owns the spinner now; only the latest open may hide it.
     if (id === activeId) setThreadLoading(false);
+  }
+}
+
+// Re-reads and repaints the open conversation after a watched turn ended: its history now holds the whole turn.
+async function repaintOpenConversation(id) {
+  try {
+    const res = await fetch(`/api/conversations/${encodeURIComponent(id)}/messages`);
+    if (!res.ok || id !== activeId) return;
+    const turns = await res.json();
+    clearThread();
+    renderTurns(id, turns);
+    cachePut("messages:" + id, turns);
+    syncArtifactsButton(id);
+  } catch {
+    // Offline: what is on screen stays.
   }
 }
 

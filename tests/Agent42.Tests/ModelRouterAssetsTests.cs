@@ -75,7 +75,7 @@ public sealed class ModelRouterAssetsTests(StaticAssetsServerFixture fixture)
     [Fact]
     public async Task Stream_RendersTheRoutedLabel_AsLiveOnlyMetadata()
     {
-        var send = await Js("send.js");
+        var send = await Js("chatstream.js"); // the event dispatcher (ADR 0153)
         var thread = await Js("thread.js");
 
         Assert.Contains("chunk.type === \"routed\"", send);

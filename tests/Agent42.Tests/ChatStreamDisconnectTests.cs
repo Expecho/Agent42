@@ -73,6 +73,8 @@ public sealed class ChatStreamDisconnectTests : IAsyncLifetime
         appBuilder.Services.AddSingleton(new McpOAuthClient(new HttpClient()));
         appBuilder.Services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
         appBuilder.Services.AddDocumentRagFakes();
+        // The pump (ADR 0153): the turn must still survive the socket dying, now because the pump is detached from the request.
+        appBuilder.Services.AddChatTurnsInMemory(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
         appBuilder.Services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
         _app = appBuilder.Build();
         _app.MapAgentApi();

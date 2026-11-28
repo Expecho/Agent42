@@ -33,6 +33,7 @@ public static partial class AgentApi
     public static IEndpointRouteBuilder MapAgentApi(this IEndpointRouteBuilder app)
     {
         MapConversationEndpoints(app);
+        MapChatTurnEndpoints(app);
         MapChatGroupEndpoints(app);
         MapAttachmentEndpoints(app);
         MapArtifactEndpoints(app);

@@ -106,6 +106,18 @@ resource agentFleetContainer 'Microsoft.Storage/storageAccounts/blobServices/con
   }
 }
 
+// The resumable chat turn's replay log (ADR 0153): one append blob and two small JSON blobs per running turn, under
+// `{user}/{conversation}/`. Retention is the app's own ChatTurnSweeper (any provider, incognito memory too), so this
+// container carries no lifecycle rule. A fixed literal, like `agent-fleet`: AzureChatTurnBlobs.ContainerName must match
+// (ChatTurnContainerNameTests pins both).
+resource chatTurnsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobService
+  name: 'chat-turns'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 // The chat gateway's single-runner lease (ADR 0111): one empty blob, `chat-gateway/lease`, whose Blob lease decides
 // which app revision runs the chat bots while an old and a new revision overlap during a rollover. Without it, two
 // revisions would both poll Telegram (409 storms) and both answer every Discord message. Reached through the same

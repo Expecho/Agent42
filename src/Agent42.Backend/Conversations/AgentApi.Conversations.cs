@@ -66,6 +66,9 @@ public static partial class AgentApi
         app.MapDelete("/api/conversations/{conversationId}", async (string conversationId, IGrainFactory grains, HttpContext http) =>
         {
             var userId = http.GetUserId();
+            // The turn replay logs hold conversation text too (ADR 0153): purged first, and a running turn's pump then finds
+            // its log missing and stops persisting, so nothing is resurrected (D11).
+            await PurgeChatTurnsAsync(http, userId, conversationId);
             await grains.GetGrain<IAgentGrain>(AgentKey(userId, conversationId)).PurgeAsync();
             await grains.GetGrain<IConversationIndexGrain>(userId).RemoveAsync(conversationId);
             // Revoke any read-only share link too, so a deleted conversation can't be resurrected through a
@@ -217,13 +220,24 @@ public static partial class AgentApi
         }
 
         http.Response.ContentType = "application/x-ndjson";
-        await foreach (var evt in agent.ChatAsync(
+        var stream = agent.ChatAsync(
             request.Message, model, attachmentRefs, request.Ephemeral,
             clientTools: KnownClientTools(request.ClientTools),
             // An edit or regenerate re-runs the turn just removed: its webhook event says so (ADR 0094).
             replacesLastTurn: request.ReplaceLastTurn,
             // What open MCP App views told the model (ADR 0133): per turn, untrusted, never stored.
-            appContext: request.AppContext))
+            appContext: request.AppContext);
+
+        // The resumable turn (ADR 0153): the grain stream is drained by a detached pump, and this response is only a reader of it,
+        // so a dead socket loses the live view and never the turn. Resolved optionally: a host without it, or ChatTurns:Enabled=false,
+        // streams the grain straight into the response as before.
+        if (http.RequestServices.GetService<ChatTurnRunner>() is { Enabled: true } runner)
+        {
+            await StreamThroughPumpAsync(runner, stream, userId, conversationId, request.Ephemeral, http);
+            return;
+        }
+
+        await foreach (var evt in stream)
         {
             await http.Response.WriteAsync(JsonSerializer.Serialize(evt, ChatStreamJson.Options) + "\n");
             await http.Response.Body.FlushAsync();

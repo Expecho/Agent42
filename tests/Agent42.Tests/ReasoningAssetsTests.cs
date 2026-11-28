@@ -45,10 +45,11 @@ public sealed class ReasoningAssetsTests(StaticAssetsServerFixture fixture)
 
         var arm = CodeOnly(Section(app, "chunk.type === \"error\"", "chunk.type === \"reasoning\""));
         Assert.Contains("streamError", arm);
+        Assert.DoesNotContain("onTextDelta", arm); // the dispatcher's name for voice.onDelta (ADR 0153)
         Assert.DoesNotContain("voice.onDelta", arm);
         Assert.DoesNotContain("answer +=", arm);
         // ... and it is painted after the loop, as an error bubble.
-        Assert.Contains("agentMsg.classList.add(\"is-error\")", CodeOnly(Section(app, "if (streamError) {", "addCopyButton(agentMsg, answer)")));
+        Assert.Contains("agentMsg.classList.add(\"is-error\")", CodeOnly(Section(app, "if (turn.streamError) {", "addCopyButton(agentMsg, turn.answer)")));
     }
 
     /// <summary>

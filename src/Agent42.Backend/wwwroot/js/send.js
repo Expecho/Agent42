@@ -1,22 +1,21 @@
 /* Agent 42 — sending & streaming. Split out of app.js (ADR 0041). */
 
 import { ephemeral } from "./agents.js";
-import { artifactCardFromToolCall, renderArtifactCards } from "./artifacts.js";
+import { renderArtifactCards } from "./artifacts.js";
+import { newTurn, readTurnResponse } from "./chatstream.js";
 import { clearPendingAttachments, pendingAttachments } from "./attachments.js";
-import { CLIENT_TOOLS, closeClientToolDialogs, resumePendingClientTools, runClientTool } from "./clienttools.js";
+import { CLIENT_TOOLS, closeClientToolDialogs, resumePendingClientTools } from "./clienttools.js";
 import { cachePut } from "./cache.js";
 import { autosize } from "./composer.js";
 import { activeAgentId, activeId, pendingAgentId, setPendingAgentId } from "./conversations.js";
 import { form, incognitoBtn, input, modelSelect, stopBtn, thread } from "./dom.js";
 import { syncMessageActions } from "./editfork.js";
-import { cancelAppCards, getAppContext, renderMcpAppCard, renderMcpAppCards } from "./mcpapps.js";
+import { getAppContext, renderMcpAppCards } from "./mcpapps.js";
 import { watchMcpReconnect } from "./mcp.js";
-import { renderResearchTodos } from "./research.js";
 import { applyModelAvailability } from "./models.js";
-import { applyStateSnapshot } from "./sharedstate.js";
 import { setTopbarShare } from "./sharelinks.js";
 import { conversations, refreshConversations } from "./sidebar.js";
-import { addAgentImage, addCopyButton, addMessage, addToolCall, clearSuggestions, completeToolCall, fillUserBubble, finishReasoning, finishToolCalls, markStopped, renderMcpReauth, renderReasoning, renderRouted, renderSuggestions, replayToolCalls, scrollToBottom, setAgentMarkdown, showUsage } from "./thread.js";
+import { addAgentImage, addCopyButton, addMessage, clearSuggestions, fillUserBubble, finishReasoning, finishToolCalls, markStopped, renderMcpReauth, replayToolCalls, scrollToBottom, setAgentMarkdown } from "./thread.js";
 
 export let streaming = false;
 // Stops live speech dictation. Reassigned via setStopSpeech() by wireSpeech() in speech.js when
@@ -213,16 +212,49 @@ export async function send(prompt, replay = null) {
   // scrolling back to re-read something earlier is not yanked away by the next chunk.
   scrollToBottom();
 
-  let answer = "";
-  // The provider's own explanation when the turn failed inside a 200 stream, or "returned an empty reply" (the `error` event).
-  // Kept apart from `answer`: that feeds the copy button, and an error is not something the assistant said. Never spoken.
-  let streamError = null;
-  // Set from the `done` event, so it reflects what the server actually did with the turn.
-  let stopped = false;
-  // toolCallEnd carries no tool name, and an artifact card needs it (read_artifact's result looks the same).
-  const toolNames = new Map();
-  // The tool input a live MCP App card is fed (ADR 0133); toolCallEnd does not repeat it.
-  const toolInputs = new Map();
+  const turn = newTurn();
+  const ctx = {
+    agentMsg, convId,
+    runToolsAbove: 0,
+    onTextDelta: (text) => voice.onDelta(text),
+    // One watch for the whole turn, so two servers needing a sign-in re-send it once, after both are back.
+    onMcpReauth: (chunk) => {
+      turnWatch ??= resendAfterReconnect(prompt, turnAttachments, convId, agentMsg);
+      renderMcpReauth(agentMsg, chunk.mcpServerId, chunk.text, turnWatch);
+    },
+  };
+  // The success tail, shared by a stream that ran to its end and one that was rejoined after the socket died (ADR 0153).
+  const finishLiveReply = () => {
+    setAgentMarkdown(agentMsg, turn.answer);
+    // After the reply, so a turn that said something and then failed keeps what it said and shows why it stopped.
+    if (turn.streamError) {
+      agentMsg.classList.add("is-error");
+      setAgentMarkdown(agentMsg, turn.answer ? `${turn.answer}
+
+  **The model reported an error.** ${turn.streamError}` : `**The model reported an error.** ${turn.streamError}`);
+    }
+    // Live-streamed reply is final: capture the raw markdown accumulator by closure for copy.
+    addCopyButton(agentMsg, turn.answer);
+    // After the copy button, so the note it appends cannot be captured into the clipboard text. A turn
+    // stopped before its first token loses this bubble entirely — see markStopped.
+    if (turn.stopped) markStopped(agentMsg, turn.answer.length > 0);
+    voice.onStreamEnd(); // speak any buffered tail (ADR 0037); no-op when voice mode is off
+    // The persona is now bound server-side; don't resend agentId on later turns. Kept on
+    // failure so a retry rebinds. Kept while incognito too (ADR 0134): an incognito binding is never stored, so a
+    // grain that deactivates between turns would otherwise run the next one as an unbound plain chat.
+    if (!ephemeral) setPendingAgentId(null);
+    // This turn persisted, so the conversation now has something to share — unless it is incognito,
+    // which is never written at all (ADR 0034). Deliberately here at the END of the try and not beside
+    // the incognitoBtn lock at the top of send(): that line runs BEFORE the fetch, so an offline send, a
+    // failed turn or a voice barge-in would light the button up on a chat that persisted nothing.
+    // Failure therefore leaves it disabled — the conservative direction, and self-healing: the chat
+    // appears in the sidebar and opening it enables share through selectConversation.
+    // The title lookup is the same one selectConversation does: a chat that already has a sidebar row
+    // has a real title, and only a brand-new one (whose title the server derives after this turn) falls
+    // back to the constant. Passing the constant unconditionally would blank the title of every
+    // already-named chat on its second turn.
+    if (!ephemeral) setTopbarShare(convId, conversations.find((c) => c.id === convId)?.title ?? "This conversation");
+  };
   try {
     // In an agent chat the model is pinned server-side, so never send a model (it would
     // switch the conversation off the agent's model). agentId is sent only on the first
@@ -257,135 +289,20 @@ export async function send(prompt, replay = null) {
     });
     if (!res.ok || !res.body) throw await httpError(res);
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        const chunk = JSON.parse(line);
-        if (chunk.type === "textDelta") {
-          answer += chunk.text;
-          setAgentMarkdown(agentMsg, answer, { caret: true });
-          voice.onDelta(chunk.text); // speak the reply as it streams (ADR 0037); no-op when voice mode is off
-        } else if (chunk.type === "routed") {
-          // The Auto router picked the model for this turn (ADR 0137).
-          renderRouted(agentMsg, chunk.text);
-        } else if (chunk.type === "error") {
-          streamError = chunk.text || "The model returned an error.";
-        } else if (chunk.type === "reasoning") {
-          // A reasoning model's thinking (ADR 0071), into a collapsed disclosure above the reply.
-          //
-          // Deliberately does NOT call voice.onDelta, unlike the textDelta arm above: hands-free voice
-          // (ADR 0037) would read the model's deliberation aloud before its actual answer, and with a
-          // speech model configured (ADR 0038) it would pay a third party per character to do it.
-          renderReasoning(agentMsg, chunk.text);
-        } else if (chunk.type === "toolCallStart") {
-          toolNames.set(chunk.toolCallId, chunk.toolName);
-          toolInputs.set(chunk.toolCallId, chunk.toolInput);
-          addToolCall(agentMsg, chunk);
-          // A tool this page runs (ADR 0089). Not awaited: the reader must keep reading while a dialog is open.
-          if (chunk.clientTool) runClientTool(convId, chunk);
-        } else if (chunk.type === "mcpElicitation") {
-          // An MCP server asks the user for input mid-tool (ADR 0095): run as the `mcp_elicitation` client tool under
-          // the request's own id. Not awaited, for the same reason as a client tool call.
-          runClientTool(convId, { toolCallId: elicitationId(chunk.elicitation), toolName: "mcp_elicitation", toolInput: chunk.elicitation });
-        } else if (chunk.type === "toolCallEnd") {
-          completeToolCall(agentMsg, chunk);
-          artifactCardFromToolCall(agentMsg, convId, toolNames.get(chunk.toolCallId), chunk.toolResult);
-          // An MCP App tool (ADR 0133): the view and the tool's raw result, live and active at once.
-          if (chunk.mcpApp) {
-            renderMcpAppCard(agentMsg, convId, {
-              toolCallId: chunk.toolCallId, toolInput: toolInputs.get(chunk.toolCallId),
-              app: chunk.mcpApp.app, resultJson: chunk.mcpApp.resultJson,
-            }, { live: true });
-          }
-        } else if (chunk.type === "image") {
-          // An image-generation model produced an image (ADR 0020): render it live in the assistant
-          // bubble via the display proxy, exactly like it will re-render on reload.
-          addAgentImage(agentMsg, activeId, chunk.attachmentId);
-        } else if (chunk.type === "mcpReauthRequired") {
-          // An MCP server's sign-in expired (ADR 0081): a Reconnect button in the bubble, opening a new tab. One
-          // watch for the whole turn, so two servers needing a sign-in re-send it once, after both are back.
-          turnWatch ??= resendAfterReconnect(prompt, turnAttachments, convId, agentMsg);
-          renderMcpReauth(agentMsg, chunk.mcpServerId, chunk.text, turnWatch);
-        } else if (chunk.type === "todos") {
-          // The research agent's checklist changed (ADR 0082): the whole list, so render replaces.
-          renderResearchTodos(agentMsg, chunk.todos);
-        } else if (chunk.type === "stateSnapshot") {
-          // The shared state changed (ADR 0089): the whole state, so the panel replaces rather than patches.
-          applyStateSnapshot(convId, chunk.state, chunk.stateVersion);
-        } else if (chunk.type === "textReset") {
-          // A later research iteration started its answer (ADR 0082): the text so far was a draft. Clear it and
-          // keep the tool calls, so the bubble ends on what a reload will show.
-          answer = "";
-          setAgentMarkdown(agentMsg, answer, { caret: true });
-        } else if (chunk.type === "suggestions") {
-          // Up to 3 clickable follow-up prompts under the reply; clicking one sends it immediately.
-          renderSuggestions(agentMsg, chunk.suggestions);
-        } else if (chunk.type === "done") {
-          // Settled here as well as in the finally: the disclosures should stop pulsing — and a long
-          // tool chain fold away — the moment the turn reports done, not one microtask later when the
-          // reader drains.
-          finishReasoning(agentMsg);
-          finishToolCalls(agentMsg);
-          // The turn is over, so a confirm still open (ADR 0089) answers a call nobody waits for any more. Here and
-          // on a recovered reply only, never in the finally: after a failed recovery the server may still be
-          // waiting on that very dialog.
-          closeClientToolDialogs();
-          showUsage(agentMsg, chunk);
-          // The SERVER decides whether this turn counts as stopped (ADR 0078), not the click: a press that
-          // lands as the last token goes out stopped nothing, and labelling that turn would be a lie.
-          if (chunk.stopped) {
-            stopped = true;
-            cancelAppCards();
-          }
-        }
-      }
-    }
-    setAgentMarkdown(agentMsg, answer);
-    // After the reply, so a turn that said something and then failed keeps what it said and shows why it stopped.
-    if (streamError) {
-      agentMsg.classList.add("is-error");
-      setAgentMarkdown(agentMsg, answer ? `${answer}
-
-**The model reported an error.** ${streamError}` : `**The model reported an error.** ${streamError}`);
-    }
-    // Live-streamed reply is final: capture the raw markdown accumulator by closure for copy.
-    addCopyButton(agentMsg, answer);
-    // After the copy button, so the note it appends cannot be captured into the clipboard text. A turn
-    // stopped before its first token loses this bubble entirely — see markStopped.
-    if (stopped) markStopped(agentMsg, answer.length > 0);
-    voice.onStreamEnd(); // speak any buffered tail (ADR 0037); no-op when voice mode is off
-    // The persona is now bound server-side; don't resend agentId on later turns. Kept on
-    // failure so a retry rebinds. Kept while incognito too (ADR 0134): an incognito binding is never stored, so a
-    // grain that deactivates between turns would otherwise run the next one as an unbound plain chat.
-    if (!ephemeral) setPendingAgentId(null);
-    // This turn persisted, so the conversation now has something to share — unless it is incognito,
-    // which is never written at all (ADR 0034). Deliberately here at the END of the try and not beside
-    // the incognitoBtn lock at the top of send(): that line runs BEFORE the fetch, so an offline send, a
-    // failed turn or a voice barge-in would light the button up on a chat that persisted nothing.
-    // Failure therefore leaves it disabled — the conservative direction, and self-healing: the chat
-    // appears in the sidebar and opening it enables share through selectConversation.
-    // The title lookup is the same one selectConversation does: a chat that already has a sidebar row
-    // has a real title, and only a brand-new one (whose title the server derives after this turn) falls
-    // back to the constant. Passing the constant unconditionally would blank the title of every
-    // already-named chat on its second turn.
-    if (!ephemeral) setTopbarShare(convId, conversations.find((c) => c.id === convId)?.title ?? "This conversation");
+    turn.turnId = res.headers.get("X-Turn-Id");
+    await readTurnResponse(res, turn, ctx);
+    finishLiveReply();
   } catch (err) {
     // Barge-in (ADR 0037): an aborted turn is a deliberate interruption, not a failure —
     // leave the partial reply as-is, don't paint the error state. voice mode drives what
     // happens next (it speaks the tail / captures the interrupting utterance).
     if (err.name === "AbortError") {
-      setAgentMarkdown(agentMsg, answer);
+      setAgentMarkdown(agentMsg, turn.answer);
       voice.onStreamEnd();
+    } else if (!err.status && turn.turnId && await reattachTurn(turn, ctx, convId)) {
+      // The socket died mid-reply but the turn is still ours to read: the server replayed what this page missed and the reply
+      // ran to its `done` (ADR 0153). Finish exactly as a stream that never broke.
+      finishLiveReply();
     } else if (!(err.status && replay?.replaceLastTurn) && await recoverPersistedReply(agentMsg, convId, priorTurns, backgrounded)) {
       // The stream died but the turn did not. Finish exactly as the success path does — the reply
       // IS on the server, so the persona is bound and the conversation is shareable.
@@ -433,6 +350,34 @@ export async function send(prompt, replay = null) {
   }
 }
 
+// Rejoins a turn whose response socket died (ADR 0153): asks the server for everything after the last event this page saw and
+// reads it into the same bubble. True only when the turn then ran to its `done`; everything else (404, a turn that failed, was
+// interrupted or was cut short, a server without this feature) returns false, and the caller falls back to polling the history.
+const REATTACH_DELAYS_MS = [500, 1000, 2000, 3000, 5000];
+async function reattachTurn(turn, ctx, convId) {
+  for (const delay of REATTACH_DELAYS_MS) {
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    try {
+      const url = `/api/chat/${encodeURIComponent(convId)}/turns/${encodeURIComponent(turn.turnId)}/stream`
+        + `?after=${turn.lastSeq}&ephemeral=${ephemeral ? "true" : "false"}`;
+      const res = await fetch(url, { signal: sendAbort?.signal });
+      // Gone, unavailable or refused: the server answered, so retrying will not change it.
+      if (!res.ok || !res.body) return false;
+      // Events up to here were history when this page attached; only newer client-tool calls are this page's to run.
+      ctx.runToolsAbove = Number(res.headers.get("X-Turn-Replay-Through")) || 0;
+      // A confirm the dead socket never showed, if the turn is still waiting for it.
+      resumePendingClientTools(convId);
+      await readTurnResponse(res, turn, ctx);
+      return turn.done;
+    } catch (err) {
+      // A barge-in or stop that aborted the fetch: nothing more to rejoin.
+      if (err.name === "AbortError") return false;
+      // The socket died again (a network that is still down): wait and ask again from the same point.
+    }
+  }
+  return false;
+}
+
 // The error for a non-OK chat response, carrying the server's own message when it sent one (a 409 from an edit or
 // regenerate explains itself) and the status, which tells the catch the server answered rather than went away.
 async function httpError(res) {
@@ -469,11 +414,54 @@ export function setVoice(value) {
   voice = value;
 }
 
-// The id an elicitation is answered under (ADR 0095), from the request JSON the stream line carries.
-function elicitationId(elicitation) {
+// Joins a turn that is running on this conversation, started elsewhere (another device, or this page before an F5): ADR 0153.
+// PASSIVE, on purpose (D13): events are rendered but no client tool or elicitation ever runs here, so a second device cannot
+// double-prompt or repeat a side effect. The grain's history does not hold a turn in flight (not even its user message), so the
+// bubble is the assistant's alone, and when the turn ends the conversation is read again and repainted by `onFinished`.
+// Stop works from here unchanged (a grain call). Returns once the turn has ended or the page navigated away.
+let passiveAbort = null;
+export function isPassiveAttach() { return passiveAbort !== null; }
+export function detachPassive() { passiveAbort?.abort(); }
+
+export async function attachToRunningTurn(convId, turnId, onFinished) {
+  if (streaming) return;
+  streaming = true;
+  passiveAbort = new AbortController();
+  syncMessageActions();
+  modelSelect.disabled = true;
+  stopBtn.hidden = false;
+  incognitoBtn.disabled = true;
+
+  const agentMsg = addMessage("agent");
+  setAgentMarkdown(agentMsg, "", { caret: true });
+  const turn = newTurn();
+  turn.turnId = turnId;
+  const ctx = { agentMsg, convId, runToolsAbove: Infinity };
+  let finished = false;
   try {
-    return JSON.parse(elicitation ?? "{}").id ?? null;
+    const res = await fetch(
+      `/api/chat/${encodeURIComponent(convId)}/turns/${encodeURIComponent(turnId)}/stream?after=0&ephemeral=false`,
+      { signal: passiveAbort.signal });
+    if (!res.ok || !res.body) return;
+    await readTurnResponse(res, turn, ctx);
+    finished = true;
   } catch {
-    return null;
+    // Aborted by navigating away, or the socket died: history owns the outcome either way.
+  } finally {
+    finishReasoning(agentMsg);
+    finishToolCalls(agentMsg);
+    const aborted = passiveAbort?.signal.aborted ?? true;
+    passiveAbort = null;
+    stopBtn.hidden = true;
+    streaming = false;
+    syncMessageActions();
+    modelSelect.disabled = modelSelect.options.length === 0;
+    applyModelAvailability();
+    // Still looking at this conversation: repaint it from the history, which now holds the whole turn (one bubble, not two).
+    if (!aborted && activeId === convId) {
+      agentMsg.remove();
+      await onFinished?.(finished);
+    }
+    refreshConversations();
   }
 }

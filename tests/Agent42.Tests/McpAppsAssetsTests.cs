@@ -152,12 +152,13 @@ public sealed class McpAppsAssetsTests(StaticAssetsServerFixture fixture)
     public async Task SendAndHistory_RenderTheCard()
     {
         var send = await fixture.Client.GetStringAsync("/js/send.js");
+        var stream = await fixture.Client.GetStringAsync("/js/chatstream.js"); // the live event dispatcher (ADR 0153)
         var conversations = await fixture.Client.GetStringAsync("/js/conversations.js");
 
-        Assert.Contains("renderMcpAppCard(agentMsg, convId", send, StringComparison.Ordinal);
-        Assert.Contains("{ live: true }", send, StringComparison.Ordinal);
+        Assert.Contains("renderMcpAppCard(agentMsg, convId", stream, StringComparison.Ordinal);
+        Assert.Contains("{ live: true }", stream, StringComparison.Ordinal);
         Assert.Contains("renderMcpAppCards(agentMsg, convId, last.toolCalls)", send, StringComparison.Ordinal);
-        Assert.Contains("cancelAppCards()", send, StringComparison.Ordinal);
+        Assert.Contains("cancelAppCards()", stream, StringComparison.Ordinal);
         Assert.Contains("renderMcpAppCards(msg, id, turn.toolCalls)", conversations, StringComparison.Ordinal);
     }
 

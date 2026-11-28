@@ -124,6 +124,9 @@ public class SharedApiFixture : SharedClusterFixture
         services.AddSingleton<IAttachmentStore, InMemoryAttachmentStore>();
         // The upload endpoint resolves the ingestion service even on the image path (ADR 0007).
         services.AddDocumentRagFakes();
+        // The resumable chat turn (ADR 0153) on its in-memory store, so every API test that chats goes through the pump the way
+        // production does. A host that skips this keeps the old direct stream (the endpoint resolves the runner optionally).
+        services.AddChatTurnsInMemory(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
         // /api/push/config injects PushConfig (ADR 0028). Off by default — a class that asserts on it says so.
         services.AddSingleton(new PushConfig(Enabled: false, PublicKey: "", Subject: ""));
     }
