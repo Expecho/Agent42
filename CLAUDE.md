@@ -167,6 +167,8 @@ from the map below, plus any ADR that amends them (grep for the number). Don't a
     child process and its store). `infra/main.bicep` pins min = max = 1. A revision rollover still overlaps two replicas
     briefly; the chat gateway covers that with a Blob lease (ADR 0111), and anything else that holds an outbound
     connection or a single-writer store needs the same (the signal-cli daemon runs only while the lease is held).
+    Resumable chat turns (ADR 0153) add in-process state (`TurnFeed`, `ChatTurnRegistry`) but are correct across replicas through the
+    store (`StoreReader`); only incognito turns, kept in memory, are same-replica only.
 13. **Egress is a design property.** Anything that sends conversation content to a third party is an ADR 0013
     extension and must be recorded as such in its ADR. Don't write "following ADR 0008" for an always-on,
     ungated provider: 0008 rejected that shape. Chat-app replies (ADR 0111) are one: opt-in per connection, and stored
